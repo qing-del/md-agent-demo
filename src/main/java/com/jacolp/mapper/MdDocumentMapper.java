@@ -12,9 +12,18 @@ import org.apache.ibatis.annotations.ResultMap;
 import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 
+/**
+ * 提供 Markdown 文档的数据库访问方法。
+ */
 @Mapper
 public interface MdDocumentMapper {
 
+    /**
+     * 按文件名新增或更新 Markdown 文档内容。
+     *
+     * @param document 待保存的文档
+     * @return 受影响的行数
+     */
     @Insert("""
             INSERT INTO md_documents (file_name, content, file_size_bytes)
             VALUES (#{fileName}, #{content}, #{fileSizeBytes})
@@ -24,6 +33,12 @@ public interface MdDocumentMapper {
             """)
     int upsert(MdDocument document);
 
+    /**
+     * 根据文件名查询文档详情。
+     *
+     * @param fileName 文档文件名
+     * @return 找到的文档；不存在时返回 {@code null}
+     */
     @Select("""
             SELECT id, file_name, content, file_size_bytes, created_at, updated_at
             FROM md_documents
@@ -47,6 +62,12 @@ public interface MdDocumentMapper {
     @ResultMap("mdDocumentResultMap")
     List<MdDocument> selectAll();
 
+    /**
+     * 根据主键查询文档详情。
+     *
+     * @param id 文档 ID
+     * @return 找到的文档；不存在时返回 {@code null}
+     */
     @Select("""
             SELECT id, file_name, content, file_size_bytes, created_at, updated_at
             FROM md_documents
@@ -55,6 +76,12 @@ public interface MdDocumentMapper {
     @ResultMap("mdDocumentResultMap")
     MdDocument selectById(@Param("id") long id);
 
+    /**
+     * 根据主键删除文档。
+     *
+     * @param id 要删除的文档 ID
+     * @return 受影响的行数
+     */
     @Delete("DELETE FROM md_documents WHERE id = #{id}")
     int deleteById(@Param("id") long id);
 }
