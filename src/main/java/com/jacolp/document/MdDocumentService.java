@@ -49,6 +49,12 @@ public class MdDocumentService {
         return repository.findAll();
     }
 
+    public MdDocument getById(long id) {
+        return repository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "document not found: " + id));
+    }
+
     private static String normalizeFileName(String originalFileName) {
         if (originalFileName == null || originalFileName.isBlank()) {
             throw badRequest("file name must not be blank");

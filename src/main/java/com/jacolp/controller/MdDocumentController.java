@@ -9,6 +9,7 @@ import com.jacolp.document.MdDocumentSummary;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -33,6 +34,11 @@ public class MdDocumentController {
     @GetMapping
     public List<DocumentSummaryResponse> list() {
         return service.list().stream().map(DocumentSummaryResponse::from).toList();
+    }
+
+    @GetMapping("/{id}")
+    public DocumentResponse getById(@PathVariable("id") long id) {
+        return DocumentResponse.from(service.getById(id));
     }
 
     public record DocumentResponse(

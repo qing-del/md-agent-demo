@@ -1,6 +1,7 @@
 package com.jacolp.document;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -8,6 +9,7 @@ import static org.mockito.Mockito.when;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,6 +17,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 @ExtendWith(MockitoExtension.class)
 class MdDocumentServiceTest {
@@ -65,5 +68,27 @@ class MdDocumentServiceTest {
 
         assertEquals(List.of(first, second), actual);
         verify(repository).findAll();
+    }
+
+    @Test
+    void getByIdReturnsCompleteDocument() {
+        MdDocument expected = new MdDocument(3L, "guide.md", "# Guide", 7L, null, null);
+        when(repository.findById(3L)).thenReturn(Optional.of(expected));
+
+        MdDocument actual = new MdDocumentService(repository).getById(3L);
+
+        assertSame(expected, actual);
+        verify(repository).findById(3L);
+    }
+
+    @Test
+    void getByIdReturnsNotFoundWhenDocumentDoesNotExist() {
+        when(repository.findById(404L)).thenReturn(Optional.empty());
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> new MdDocumentService(repository).getById(404L));
+
+        assertEquals(404, exception.getStatusCode().value());
     }
 }

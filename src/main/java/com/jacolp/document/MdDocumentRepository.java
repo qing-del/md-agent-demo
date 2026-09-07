@@ -59,4 +59,12 @@ public class MdDocumentRepository {
                 ORDER BY updated_at DESC, id DESC
                 """, SUMMARY_ROW_MAPPER);
     }
+
+    public Optional<MdDocument> findById(long id) {
+        return jdbcTemplate.query("""
+                SELECT id, file_name, content, file_size_bytes, created_at, updated_at
+                FROM md_documents
+                WHERE id = ?
+                """, ROW_MAPPER, id).stream().findFirst();
+    }
 }
