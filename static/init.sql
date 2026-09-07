@@ -23,12 +23,14 @@ CREATE TABLE IF NOT EXISTS md_documents (
 
 CREATE TABLE IF NOT EXISTS chat_sessions (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    session_key CHAR(36) NOT NULL,
     title VARCHAR(200) NULL,
     messages JSON NOT NULL DEFAULT (JSON_ARRAY()),
     referenced_file_contents JSON NOT NULL DEFAULT (JSON_ARRAY()),
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     PRIMARY KEY (id),
+    UNIQUE KEY uk_chat_sessions_session_key (session_key),
     KEY idx_chat_sessions_updated_at (updated_at),
     CONSTRAINT chk_chat_sessions_messages_array
         CHECK (JSON_TYPE(messages) = 'ARRAY'),
