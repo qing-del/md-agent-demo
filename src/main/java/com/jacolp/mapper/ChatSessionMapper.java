@@ -27,11 +27,25 @@ public interface ChatSessionMapper {
      * @return 受影响的行数
      */
     @Insert("""
-            INSERT INTO chat_sessions (title, messages, referenced_file_contents)
-            VALUES (#{title}, #{messages}, #{referencedFileContents})
+            INSERT INTO chat_sessions (session_key, title, messages, referenced_file_contents)
+            VALUES (#{sessionKey}, #{title}, #{messages}, #{referencedFileContents})
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id", keyColumn = "id")
     int insert(ChatSession session);
+
+    /**
+     * 根据前端生成的 UUID 会话标识加载聊天会话及其历史快照。
+     *
+     * @param sessionKey UUID 会话标识
+     * @return 找到的会话；不存在时返回 {@code null}
+     */
+    @Select("""
+            SELECT id, session_key, title, messages, referenced_file_contents, created_at, updated_at
+            FROM chat_sessions
+            WHERE session_key = #{sessionKey}
+            """)
+    @ResultMap("chatSessionResultMap")
+    ChatSession selectBySessionKey(@Param("sessionKey") String sessionKey);
 
     /**
      * 根据主键加载聊天会话及其历史快照。
@@ -40,12 +54,13 @@ public interface ChatSessionMapper {
      * @return 找到的会话；不存在时返回 {@code null}
      */
     @Select("""
-            SELECT id, title, messages, referenced_file_contents, created_at, updated_at
+            SELECT id, session_key, title, messages, referenced_file_contents, created_at, updated_at
             FROM chat_sessions
             WHERE id = #{id}
             """)
     @Results(id = "chatSessionResultMap", value = {
         @Result(property = "id", column = "id", id = true),
+        @Result(property = "sessionKey", column = "session_key"),
         @Result(property = "title", column = "title"),
         @Result(property = "messages", column = "messages"),
         @Result(property = "referencedFileContents", column = "referenced_file_contents"),
@@ -60,7 +75,7 @@ public interface ChatSessionMapper {
      * @return 聊天会话列表
      */
     @Select("""
-            SELECT id, title, messages, referenced_file_contents, created_at, updated_at
+            SELECT id, session_key, title, messages, referenced_file_contents, created_at, updated_at
             FROM chat_sessions
             ORDER BY updated_at DESC, id DESC
             """)

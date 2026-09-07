@@ -29,6 +29,7 @@ class ChatSessionMapperTest {
         jdbcTemplate.execute("""
                 CREATE TABLE chat_sessions (
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    session_key VARCHAR(36) NOT NULL UNIQUE,
                     title VARCHAR(200),
                     messages LONGVARCHAR NOT NULL DEFAULT '[]',
                     referenced_file_contents LONGVARCHAR NOT NULL DEFAULT '[]',
@@ -41,6 +42,7 @@ class ChatSessionMapperTest {
     @Test
     void persistsAndUpdatesChatSessionSnapshot() {
         ChatSession session = new ChatSession();
+        session.setSessionKey("550e8400-e29b-41d4-a716-446655440000");
         session.setTitle("Spring AI");
         session.setMessages("[{\"role\":\"user\",\"content\":\"hello\"}]");
         session.setReferencedFileContents("[{\"fileName\":\"guide.md\"}]");
@@ -50,6 +52,7 @@ class ChatSessionMapperTest {
 
         ChatSession saved = mapper.selectById(session.getId());
         assertNotNull(saved);
+        assertEquals(session.getSessionKey(), saved.getSessionKey());
         assertEquals("Spring AI", saved.getTitle());
         assertEquals(session.getMessages(), saved.getMessages());
         assertEquals(session.getReferencedFileContents(), saved.getReferencedFileContents());
@@ -64,6 +67,7 @@ class ChatSessionMapperTest {
         assertEquals(saved.getMessages(), updated.getMessages());
         assertEquals(saved.getReferencedFileContents(), updated.getReferencedFileContents());
         assertEquals(1, mapper.selectAll().size());
+        assertEquals(saved.getId(), mapper.selectBySessionKey(session.getSessionKey()).getId());
 
         assertEquals(1, mapper.deleteById(saved.getId()));
         assertNull(mapper.selectById(saved.getId()));

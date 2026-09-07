@@ -1,5 +1,7 @@
 package com.jacolp.controller;
 
+import java.util.UUID;
+
 import com.jacolp.service.ChatContextManager;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
@@ -11,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * 提供基于已有聊天会话的对话接口。
+ * 提供由前端 UUID 标识的聊天对话接口。
  */
 @RestController
 @RequestMapping("/api/chat")
@@ -33,25 +35,24 @@ public class ChatController {
     }
 
     /**
-     * 使用指定聊天会话处理一条用户消息。
+     * 使用指定 UUID 会话处理一条用户消息。
      *
-     * @param request 包含会话 ID 和用户消息的请求
+     * @param request 包含 UUID 会话标识和用户消息的请求
      * @return AI 生成的回复
-     * @throws ResponseStatusException 请求参数非法或会话不存在时抛出
+     * @throws ResponseStatusException 请求参数非法时抛出
      */
     @PostMapping
     public ChatResponse chat(@RequestBody ChatRequest request) {
-        // 会话 ID 是上下文记忆和数据库记录的唯一关联，缺失或非正数时无法安全处理请求。
-        if (request == null || request.chatSessionId() == null || request.chatSessionId() <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "chatSessionId must be a positive session id");
+        // 会话 UUID 是前端与持久化记录的稳定关联，格式错误时不能安全创建或恢复会话。
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request must not be null");
         }
         // 空消息不会产生有效的对话轮次，因此在调用模型前直接拒绝。
         if (request.message() == null || request.message().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "message must not be blank");
         }
 
-        String conversationId = Long.toString(request.chatSessionId());
+        String conversationId = canonicalSessionKey(request.sessionKey());
         // 整个模型调用期间持有会话锁，避免同一会话的用户消息和 AI 回复交叉写入历史。
         String content = this.chatContextManager.withConversationLock(conversationId, () -> this.chatClient.prompt()
                 .advisors(advisorSpec -> advisorSpec.param(ChatMemory.CONVERSATION_ID, conversationId))
@@ -63,12 +64,36 @@ public class ChatController {
     }
 
     /**
+     * 校验并规范化前端传入的 UUID 会话标识。
+     *
+     * @param sessionKey 前端生成的 UUID 会话标识
+     * @return 小写、标准格式的 UUID 会话标识
+     * @throws ResponseStatusException 会话标识为空或格式非法时抛出
+     */
+    private static String canonicalSessionKey(String sessionKey) {
+        if (sessionKey == null || sessionKey.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "sessionKey must be a UUID");
+        }
+        try {
+            UUID uuid = UUID.fromString(sessionKey);
+            // UUID.fromString 接受部分非标准缩写，因此再比对标准形式以保证数据库键唯一。
+            if (!uuid.toString().equalsIgnoreCase(sessionKey)) {
+                throw new IllegalArgumentException("sessionKey must use the standard UUID format");
+            }
+            return uuid.toString();
+        }
+        catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "sessionKey must be a UUID", exception);
+        }
+    }
+
+    /**
      * 聊天请求参数。
      *
-     * @param chatSessionId 要继续对话的聊天会话 ID
+     * @param sessionKey 前端生成的 UUID 会话标识
      * @param message 用户原始消息
      */
-    public record ChatRequest(Long chatSessionId, String message) {
+    public record ChatRequest(String sessionKey, String message) {
     }
 
     /**

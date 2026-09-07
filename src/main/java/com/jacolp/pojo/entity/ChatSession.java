@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 public class ChatSession {
 
     private long id;
+    private String sessionKey;
     private String title;
     private String messages = "[]";
     private String referencedFileContents = "[]";
@@ -24,6 +25,7 @@ public class ChatSession {
      * 创建完整的聊天会话实体。
      *
      * @param id 聊天会话 ID
+     * @param sessionKey 前端生成的 UUID 会话标识
      * @param title 会话标题
      * @param messages 消息 JSON 快照
      * @param referencedFileContents 文件引用 JSON 快照
@@ -32,12 +34,14 @@ public class ChatSession {
      */
     public ChatSession(
             long id,
+            String sessionKey,
             String title,
             String messages,
             String referencedFileContents,
             LocalDateTime createdAt,
             LocalDateTime updatedAt) {
         this.id = id;
+        this.sessionKey = sessionKey;
         this.title = title;
         this.messages = messages;
         this.referencedFileContents = referencedFileContents;
@@ -61,6 +65,24 @@ public class ChatSession {
      */
     public void setId(long id) {
         this.id = id;
+    }
+
+    /**
+     * 获取前端生成的 UUID 会话标识。
+     *
+     * @return UUID 会话标识
+     */
+    public String getSessionKey() {
+        return sessionKey;
+    }
+
+    /**
+     * 设置前端生成的 UUID 会话标识。
+     *
+     * @param sessionKey UUID 会话标识
+     */
+    public void setSessionKey(String sessionKey) {
+        this.sessionKey = sessionKey;
     }
 
     /**

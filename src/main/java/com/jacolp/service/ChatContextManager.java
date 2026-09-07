@@ -3,6 +3,7 @@ package com.jacolp.service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantLock;
@@ -19,11 +20,9 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.http.HttpStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 /**
  * 基于内存的聊天记忆实现。
@@ -61,9 +60,9 @@ public class ChatContextManager implements ChatMemory {
     /**
      * 将消息追加到指定会话的完整历史，并将会话标记为待刷新。
      *
-     * @param conversationId 聊天会话 ID 的字符串形式
+     * @param conversationId UUID 会话标识
      * @param messages 待追加的消息列表
-     * @throws IllegalArgumentException 会话 ID 非法或消息列表包含空元素时抛出
+     * @throws IllegalArgumentException UUID 会话标识非法或消息列表包含空元素时抛出
      * @throws NullPointerException 消息列表为空时抛出
      */
     @Override
@@ -92,9 +91,9 @@ public class ChatContextManager implements ChatMemory {
     /**
      * 获取指定会话的上下文窗口。
      *
-     * @param conversationId 聊天会话 ID 的字符串形式
+     * @param conversationId UUID 会话标识
      * @return 最近 {@value #MAX_CONTEXT_MESSAGES} 条消息
-     * @throws IllegalArgumentException 会话 ID 非法时抛出
+     * @throws IllegalArgumentException UUID 会话标识非法时抛出
      */
     @Override
     public List<Message> get(String conversationId) {
@@ -114,8 +113,8 @@ public class ChatContextManager implements ChatMemory {
     /**
      * 清空指定会话的内存消息，并保留会话记录等待刷新为空数组。
      *
-     * @param conversationId 聊天会话 ID 的字符串形式
-     * @throws IllegalArgumentException 会话 ID 非法时抛出
+     * @param conversationId UUID 会话标识
+     * @throws IllegalArgumentException UUID 会话标识非法时抛出
      */
     @Override
     public void clear(String conversationId) {
@@ -137,11 +136,11 @@ public class ChatContextManager implements ChatMemory {
      *
      * <p>这样可以防止同一会话的多个请求交叉执行记忆顾问回调。</p>
      *
-     * @param conversationId 聊天会话 ID 的字符串形式
+     * @param conversationId UUID 会话标识
      * @param action 需要在会话锁内执行的请求动作
      * @param <T> 请求结果类型
      * @return 请求动作的执行结果
-     * @throws IllegalArgumentException 会话 ID 非法时抛出
+     * @throws IllegalArgumentException UUID 会话标识非法时抛出
      * @throws NullPointerException 请求动作为空时抛出
      */
     public <T> T withConversationLock(String conversationId, Supplier<T> action) {
@@ -215,49 +214,60 @@ public class ChatContextManager implements ChatMemory {
     }
 
     /**
-     * 从缓存获取会话；缓存未命中时从数据库加载并建立内存状态。
+     * 从缓存获取会话；缓存未命中时从数据库加载或创建会话并建立内存状态。
      *
-     * @param conversationId 已规范化的会话 ID
+     * @param conversationId 已规范化的 UUID 会话标识
      * @return 会话内存状态
-     * @throws ResponseStatusException 数据库中不存在对应会话时抛出 404 异常
      */
     private ConversationState getOrLoad(String conversationId) {
         // computeIfAbsent 保证同一个规范化 ID 只建立一个缓存状态。
-        return this.conversations.computeIfAbsent(conversationId, key -> {
-            long sessionId = Long.parseLong(key);
-            ChatSession session = this.chatSessionMapper.selectById(sessionId);
-            // 只允许继续真实存在的会话，避免产生无法持久化的孤立内存记录。
-            if (session == null) {
-                throw new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "chat session not found: " + sessionId);
-            }
-            return ConversationState.from(session, this.objectMapper);
-        });
+        return this.conversations.computeIfAbsent(conversationId, this::loadOrCreateConversation);
     }
 
     /**
-     * 校验并规范化 Spring AI 使用的会话 ID。
+     * 按 UUID 读取会话；不存在时创建空会话并返回其内存状态。
      *
-     * @param conversationId 原始会话 ID
-     * @return 无前导零的正数会话 ID 字符串
-     * @throws IllegalArgumentException 会话 ID 为空、非数字或非正数时抛出
+     * @param sessionKey 已规范化的 UUID 会话标识
+     * @return 已加载或新建的会话内存状态
+     * @throws IllegalStateException 创建会话未成功写入数据库时抛出
+     */
+    private ConversationState loadOrCreateConversation(String sessionKey) {
+        ChatSession session = this.chatSessionMapper.selectBySessionKey(sessionKey);
+        if (session == null) {
+            // 前端首次发送该 UUID 时创建空会话，使其后续历史可由同一标识稳定恢复。
+            session = new ChatSession();
+            session.setSessionKey(sessionKey);
+            int insertedRows = this.chatSessionMapper.insert(session);
+            if (insertedRows != 1) {
+                throw new IllegalStateException("Unable to create chat session: " + sessionKey);
+            }
+        }
+        return ConversationState.from(session, this.objectMapper, sessionKey);
+    }
+
+    /**
+     * 校验并规范化 Spring AI 使用的 UUID 会话标识。
+     *
+     * @param conversationId 原始 UUID 会话标识
+     * @return 小写、标准格式的 UUID 会话标识
+     * @throws IllegalArgumentException 会话标识为空或格式非法时抛出
      */
     private static String canonicalConversationId(String conversationId) {
-        // 会话 ID 必须存在，否则无法定位上下文和数据库记录。
+        // UUID 是前端与服务端会话状态的稳定关联，不能为空或使用非标准格式。
         if (conversationId == null || conversationId.isBlank()) {
             throw new IllegalArgumentException("conversationId cannot be null or empty");
         }
 
         try {
-            long sessionId = Long.parseLong(conversationId);
-            // 仅接受正数主键，拒绝 0、负数和超出 long 范围的标识。
-            if (sessionId <= 0) {
-                throw new IllegalArgumentException("conversationId must be a positive session id");
+            UUID uuid = UUID.fromString(conversationId);
+            // UUID.fromString 可接受部分缩写格式，统一拒绝以避免同一会话出现多个缓存键。
+            if (!uuid.toString().equalsIgnoreCase(conversationId)) {
+                throw new IllegalArgumentException("conversationId must use the standard UUID format");
             }
-            return Long.toString(sessionId);
+            return uuid.toString();
         }
-        catch (NumberFormatException exception) {
-            throw new IllegalArgumentException("conversationId must be a numeric session id", exception);
+        catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("conversationId must be a UUID", exception);
         }
     }
 
@@ -292,7 +302,7 @@ public class ChatContextManager implements ChatMemory {
         /**
          * 创建一个会话内存状态。
          *
-         * @param conversationId 规范化后的会话 ID
+         * @param conversationId 规范化后的 UUID 会话标识
          * @param sessionId 数据库中的会话主键
          * @param title 会话标题
          * @param messages 完整消息历史
@@ -316,10 +326,13 @@ public class ChatContextManager implements ChatMemory {
          *
          * @param session 数据库中的聊天会话
          * @param objectMapper 用于解析消息 JSON 的对象映射器
+         * @param conversationId 当前缓存使用的 UUID 会话标识
          * @return 初始化完成的会话内存状态
          */
-        private static ConversationState from(ChatSession session, ObjectMapper objectMapper) {
-            String conversationId = Long.toString(session.getId());
+        private static ConversationState from(
+                ChatSession session,
+                ObjectMapper objectMapper,
+                String conversationId) {
             // 文件引用 JSON 由数据库原样保留，当前阶段不解析或展开完整 Markdown 内容。
             return new ConversationState(
                     conversationId,
@@ -351,7 +364,7 @@ public class ChatContextManager implements ChatMemory {
          *
          * @param messagesJson 消息 JSON 文本
          * @param objectMapper 用于反序列化的对象映射器
-         * @param conversationId 出错时用于日志和异常信息的会话 ID
+         * @param conversationId 出错时用于日志和异常信息的 UUID 会话标识
          * @return Spring AI 消息列表
          */
         private static List<Message> readMessages(

@@ -26,6 +26,8 @@ import org.springframework.web.server.ResponseStatusException;
 @ExtendWith(MockitoExtension.class)
 class ChatControllerTest {
 
+    private static final String SESSION_KEY = "550e8400-e29b-41d4-a716-446655440000";
+
     @Mock
     private ChatClient chatClient;
 
@@ -40,7 +42,7 @@ class ChatControllerTest {
 
     @Test
     void chatPassesConversationIdToMemoryAdvisor() {
-        when(this.chatSessionMapper.selectById(5L)).thenReturn(session(5L));
+        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(5L));
         when(this.chatClient.prompt()).thenReturn(this.requestSpec);
         when(this.requestSpec.user("hello")).thenReturn(this.requestSpec);
         when(this.requestSpec.call()).thenReturn(this.responseSpec);
@@ -58,14 +60,14 @@ class ChatControllerTest {
                 new ChatContextManager(this.chatSessionMapper, new ObjectMapper()));
 
         ChatController.ChatResponse response = controller.chat(
-                new ChatController.ChatRequest(5L, "hello"));
+                new ChatController.ChatRequest(SESSION_KEY, "hello"));
 
         assertEquals("answer", response.content());
-        verify(advisorSpec).param(ChatMemory.CONVERSATION_ID, "5");
+        verify(advisorSpec).param(ChatMemory.CONVERSATION_ID, SESSION_KEY);
     }
 
     @Test
-    void chatRejectsMissingSessionId() {
+    void chatRejectsMissingSessionKey() {
         ChatController controller = new ChatController(
                 this.chatClient,
                 new ChatContextManager(this.chatSessionMapper, new ObjectMapper()));
@@ -78,14 +80,14 @@ class ChatControllerTest {
     }
 
     @Test
-    void chatRejectsNonPositiveSessionId() {
+    void chatRejectsInvalidSessionKey() {
         ChatController controller = new ChatController(
                 this.chatClient,
                 new ChatContextManager(this.chatSessionMapper, new ObjectMapper()));
 
         ResponseStatusException exception = assertThrows(
                 ResponseStatusException.class,
-                () -> controller.chat(new ChatController.ChatRequest(0L, "hello")));
+                () -> controller.chat(new ChatController.ChatRequest("invalid", "hello")));
 
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
     }
@@ -93,6 +95,7 @@ class ChatControllerTest {
     private static ChatSession session(long id) {
         ChatSession session = new ChatSession();
         session.setId(id);
+        session.setSessionKey(SESSION_KEY);
         session.setMessages("[]");
         session.setReferencedFileContents("[]");
         return session;

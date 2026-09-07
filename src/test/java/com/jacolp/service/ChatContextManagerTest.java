@@ -1,8 +1,8 @@
 package com.jacolp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -21,10 +21,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.web.server.ResponseStatusException;
 
 @ExtendWith(MockitoExtension.class)
 class ChatContextManagerTest {
+
+    private static final String SESSION_KEY = "550e8400-e29b-41d4-a716-446655440000";
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -33,15 +34,15 @@ class ChatContextManagerTest {
 
     @Test
     void getReturnsTheLastTenMessagesWhileSnapshotKeepsTheFullHistory() throws Exception {
-        when(this.chatSessionMapper.selectById(1L)).thenReturn(session(1L, "[]", "[]"));
+        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(1L, "[]", "[]"));
         when(this.chatSessionMapper.updateSnapshot(any(ChatSession.class))).thenReturn(1);
         ChatContextManager manager = manager();
 
         for (int index = 1; index <= 12; index++) {
-            manager.add("1", new UserMessage("message-" + index));
+            manager.add(SESSION_KEY, new UserMessage("message-" + index));
         }
 
-        List<Message> context = manager.get("1");
+        List<Message> context = manager.get(SESSION_KEY);
         assertEquals(10, context.size());
         assertEquals("message-3", context.get(0).getText());
         assertEquals("message-12", context.get(9).getText());
@@ -57,36 +58,36 @@ class ChatContextManagerTest {
 
     @Test
     void cacheMissLoadsMessagesAndReferencesOnlyOnce() {
-        when(this.chatSessionMapper.selectById(7L)).thenReturn(session(
+        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(
                 7L,
                 "[{\"role\":\"user\",\"content\":\"hello\"},"
                         + "{\"role\":\"assistant\",\"content\":\"hi\"}]",
                 "[{\"fileName\":\"guide.md\"}]"));
         ChatContextManager manager = manager();
 
-        List<Message> firstRead = manager.get("7");
-        List<Message> secondRead = manager.get("7");
+        List<Message> firstRead = manager.get(SESSION_KEY);
+        List<Message> secondRead = manager.get(SESSION_KEY);
 
         assertEquals(2, firstRead.size());
         assertEquals(UserMessage.class, firstRead.get(0).getClass());
         assertEquals("hello", firstRead.get(0).getText());
         assertEquals(AssistantMessage.class, firstRead.get(1).getClass());
         assertEquals("hi", secondRead.get(1).getText());
-        verify(this.chatSessionMapper, times(1)).selectById(7L);
+        verify(this.chatSessionMapper, times(1)).selectBySessionKey(SESSION_KEY);
     }
 
     @Test
     void clearMarksTheConversationDirtyAndPreservesReferenceMetadata() throws Exception {
-        when(this.chatSessionMapper.selectById(3L)).thenReturn(session(
+        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(
                 3L,
                 "[{\"role\":\"user\",\"content\":\"hello\"}]",
                 "[{\"fileName\":\"guide.md\"}]"));
         when(this.chatSessionMapper.updateSnapshot(any(ChatSession.class))).thenReturn(1);
         ChatContextManager manager = manager();
 
-        manager.clear("3");
+        manager.clear(SESSION_KEY);
 
-        assertEquals(List.of(), manager.get("3"));
+        assertEquals(List.of(), manager.get(SESSION_KEY));
         assertEquals(1, manager.flushDirtySessions(false));
         ArgumentCaptor<ChatSession> snapshotCaptor = ArgumentCaptor.forClass(ChatSession.class);
         verify(this.chatSessionMapper).updateSnapshot(snapshotCaptor.capture());
@@ -96,14 +97,22 @@ class ChatContextManagerTest {
     }
 
     @Test
-    void missingConversationReturnsNotFound() {
-        when(this.chatSessionMapper.selectById(404L)).thenReturn(null);
+    void missingConversationCreatesANewSession() {
+        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(null);
+        doAnswer(invocation -> {
+            ChatSession session = invocation.getArgument(0);
+            session.setId(404L);
+            return 1;
+        }).when(this.chatSessionMapper).insert(any(ChatSession.class));
+        when(this.chatSessionMapper.updateSnapshot(any(ChatSession.class))).thenReturn(1);
         ChatContextManager manager = manager();
 
-        ResponseStatusException exception = assertThrows(
-                ResponseStatusException.class, () -> manager.get("404"));
+        manager.add(SESSION_KEY, new UserMessage("hello"));
 
-        assertEquals(404, exception.getStatusCode().value());
+        assertEquals(1, manager.flushDirtySessions(false));
+        ArgumentCaptor<ChatSession> sessionCaptor = ArgumentCaptor.forClass(ChatSession.class);
+        verify(this.chatSessionMapper).insert(sessionCaptor.capture());
+        assertEquals(SESSION_KEY, sessionCaptor.getValue().getSessionKey());
     }
 
     private ChatContextManager manager() {

@@ -28,6 +28,8 @@ import org.springframework.ai.chat.messages.UserMessage;
 @ExtendWith(MockitoExtension.class)
 class ChatSessionFlushSchedulerTest {
 
+    private static final String SESSION_KEY = "550e8400-e29b-41d4-a716-446655440000";
+
     @Mock
     private ChatSessionMapper chatSessionMapper;
 
@@ -42,13 +44,13 @@ class ChatSessionFlushSchedulerTest {
 
     @Test
     void scheduledFlushWritesMessagesAndReferencesAndDoesNotRepeatAfterSuccess() {
-        when(this.chatSessionMapper.selectById(1L)).thenReturn(session(
+        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(
                 1L, "[]", "[{\"fileName\":\"guide.md\"}]"));
         when(this.chatSessionMapper.updateSnapshot(any(ChatSession.class))).thenReturn(1);
         ChatContextManager manager = manager();
         ChatSessionFlushScheduler scheduler = new ChatSessionFlushScheduler(manager);
 
-        manager.add("1", new UserMessage("hello"));
+        manager.add(SESSION_KEY, new UserMessage("hello"));
         scheduler.flushDirtySessions();
         scheduler.flushDirtySessions();
 
@@ -60,14 +62,14 @@ class ChatSessionFlushSchedulerTest {
 
     @Test
     void failedFlushKeepsTheConversationDirtyForRetry() {
-        when(this.chatSessionMapper.selectById(2L)).thenReturn(session(2L, "[]", "[]"));
+        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(2L, "[]", "[]"));
         when(this.chatSessionMapper.updateSnapshot(any(ChatSession.class)))
                 .thenThrow(new IllegalStateException("database unavailable"))
                 .thenReturn(1);
         ChatContextManager manager = manager();
         ChatSessionFlushScheduler scheduler = new ChatSessionFlushScheduler(manager);
 
-        manager.add("2", new UserMessage("retry me"));
+        manager.add(SESSION_KEY, new UserMessage("retry me"));
         scheduler.flushDirtySessions();
         scheduler.flushDirtySessions();
 
@@ -76,16 +78,16 @@ class ChatSessionFlushSchedulerTest {
 
     @Test
     void scheduledFlushSkipsAConversationWhileARequestIsInFlight() throws Exception {
-        when(this.chatSessionMapper.selectById(3L)).thenReturn(session(3L, "[]", "[]"));
+        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(3L, "[]", "[]"));
         when(this.chatSessionMapper.updateSnapshot(any(ChatSession.class))).thenReturn(1);
         ChatContextManager manager = manager();
         ChatSessionFlushScheduler scheduler = new ChatSessionFlushScheduler(manager);
-        manager.add("3", new UserMessage("in flight"));
+        manager.add(SESSION_KEY, new UserMessage("in flight"));
 
         CountDownLatch requestEntered = new CountDownLatch(1);
         CountDownLatch releaseRequest = new CountDownLatch(1);
         this.executor = Executors.newSingleThreadExecutor();
-        Future<?> request = this.executor.submit(() -> manager.withConversationLock("3", () -> {
+        Future<?> request = this.executor.submit(() -> manager.withConversationLock(SESSION_KEY, () -> {
             requestEntered.countDown();
             try {
                 releaseRequest.await(5, TimeUnit.SECONDS);
@@ -108,16 +110,16 @@ class ChatSessionFlushSchedulerTest {
 
     @Test
     void shutdownFlushWaitsForAnInFlightConversation() throws Exception {
-        when(this.chatSessionMapper.selectById(4L)).thenReturn(session(4L, "[]", "[]"));
+        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(4L, "[]", "[]"));
         when(this.chatSessionMapper.updateSnapshot(any(ChatSession.class))).thenReturn(1);
         ChatContextManager manager = manager();
         ChatSessionFlushScheduler scheduler = new ChatSessionFlushScheduler(manager);
-        manager.add("4", new UserMessage("shutdown"));
+        manager.add(SESSION_KEY, new UserMessage("shutdown"));
 
         CountDownLatch requestEntered = new CountDownLatch(1);
         CountDownLatch releaseRequest = new CountDownLatch(1);
         this.executor = Executors.newFixedThreadPool(2);
-        Future<?> request = this.executor.submit(() -> manager.withConversationLock("4", () -> {
+        Future<?> request = this.executor.submit(() -> manager.withConversationLock(SESSION_KEY, () -> {
             requestEntered.countDown();
             try {
                 releaseRequest.await(5, TimeUnit.SECONDS);
