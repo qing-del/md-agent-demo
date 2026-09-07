@@ -19,7 +19,7 @@ v1 直接使用 `ChatMemory` 作为上下文管理接口，不再额外定义同
 - `clear`：清理会话内存状态。
 - 内部同时保留完整消息列表，供定时持久化使用。
 
-`MessageChatMemoryAdvisor` 使用 `ChatMemory` 为每次请求加载上下文，并在请求完成后加入用户消息和 AI 回复；每次调用必须传入稳定的 `conversationId`，使用 `chat_sessions.id` 转成字符串即可。
+`MessageChatMemoryAdvisor` 使用 `ChatMemory` 为每次请求加载上下文，并在请求完成后加入用户消息和 AI 回复；每次调用必须传入稳定的 `conversationId`，使用前端生成并持久化在 `chat_sessions.session_key` 中的 UUID。
 
 ## 数据结构
 
@@ -27,6 +27,12 @@ v1 直接使用 `ChatMemory` 作为上下文管理接口，不再额外定义同
 
 ```sql
 referenced_file_contents JSON NOT NULL DEFAULT (JSON_ARRAY())
+```
+
+同时保留数据库自增主键，并增加前端会话标识：
+
+```sql
+session_key CHAR(36) NOT NULL UNIQUE
 ```
 
 推荐保存去重后的引用信息，而不是完整文件内容：
@@ -63,8 +69,8 @@ v1 不保存完整文件快照，因此普通引用在文件被修改或删除�
 
 ## 请求处理流程
 
-1. 请求携带 `chatSessionId` 和用户原始消息。
-2. 从缓存获取会话；缓存未命中时从 `chat_sessions` 加载。
+1. 前端生成 UUID，并在请求中携带 `sessionKey` 和用户原始消息。
+2. 从缓存获取会话；缓存未命中时按 `session_key` 从 `chat_sessions` 加载，不存在时自动创建。
 3. 解析 `@xxx.md`，根据文档 ID/文件名读取 `md_documents`。
 4. 将文件引用元数据、选中片段和有限前后文加入当前会话缓存。
 5. 通过 `ChatMemory` 向模型提供最近 10 条消息。
@@ -98,7 +104,7 @@ v1 不保存完整文件快照，因此普通引用在文件被修改或删除�
 
 ## 实施顺序
 
-1. 确认请求中的 `chatSessionId`、`@` 语法和选中片段字段。
+1. 确认请求中的 UUID `sessionKey`、`@` 语法和选中片段字段。
 2. 增加数据库列及迁移脚本。
 3. 实现基于内存缓存的 `ChatMemory` 和 10 条滑动窗口。
 4. 接入 `MessageChatMemoryAdvisor`。

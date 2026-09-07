@@ -16,10 +16,12 @@ mvn spring-boot:run
 ```bash
 curl -X POST http://localhost:8080/api/chat \
   -H 'Content-Type: application/json' \
-  -d '{"chatSessionId":1,"message":"用一句话介绍 Spring AI"}'
+  -d '{"sessionKey":"550e8400-e29b-41d4-a716-446655440000","message":"用一句话介绍 Spring AI"}'
 ```
 
-`chatSessionId` 必须对应一个已经存在的聊天会话。
+`sessionKey` 必须是前端生成的标准 UUID。后端会在首次请求时创建对应会话，之后使用同一 UUID 恢复历史上下文。
+
+已有数据库启动前，需先执行 [20260907_add_chat_session_key.sql](static/migration/20260907_add_chat_session_key.sql)；新建数据库直接执行 [init.sql](static/init.sql)。
 
 返回：
 
