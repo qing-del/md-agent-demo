@@ -25,12 +25,15 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     title VARCHAR(200) NULL,
     messages JSON NOT NULL DEFAULT (JSON_ARRAY()),
+    referenced_file_contents JSON NOT NULL DEFAULT (JSON_ARRAY()),
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     PRIMARY KEY (id),
     KEY idx_chat_sessions_updated_at (updated_at),
     CONSTRAINT chk_chat_sessions_messages_array
-        CHECK (JSON_TYPE(messages) = 'ARRAY')
+        CHECK (JSON_TYPE(messages) = 'ARRAY'),
+    CONSTRAINT chk_chat_sessions_referenced_file_contents_array
+        CHECK (JSON_TYPE(referenced_file_contents) = 'ARRAY')
 ) ENGINE = InnoDB
   DEFAULT CHARACTER SET utf8mb4
   COLLATE = utf8mb4_0900_ai_ci
