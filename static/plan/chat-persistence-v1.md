@@ -49,11 +49,10 @@ referenced_file_contents JSON NOT NULL DEFAULT (JSON_ARRAY())
 ```json
 {
   "selectedContext": {
+    "title": "被选中区域的标题",
     "before": "选中内容前的有限文本",
     "selected": "用户选中的文本",
-    "after": "选中内容后的有限文本",
-    "startLine": 10,
-    "endLine": 14
+    "after": "选中内容后的有限文本"
   }
 }
 ```
@@ -76,7 +75,7 @@ v1 不保存完整文件快照，因此普通引用在文件被修改或删除�
 
 ## 刷新策略
 
-- 定时任务每 2 分钟扫描 dirty 会话并批量写入数据库。
+- 定时任务每 1 分钟扫描 dirty 会话并批量写入数据库。
 - 每次刷新同时更新 `messages` 和 `referenced_file_contents`，保证同一会话的数据一致。
 - AI 请求进行中时不刷新该会话，待请求完成后进入下一次刷新。
 - 数据库写入失败时保留 dirty 状态并重试。
