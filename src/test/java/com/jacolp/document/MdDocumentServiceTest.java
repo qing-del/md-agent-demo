@@ -91,4 +91,24 @@ class MdDocumentServiceTest {
 
         assertEquals(404, exception.getStatusCode().value());
     }
+
+    @Test
+    void deleteByIdDeletesAnExistingDocument() {
+        when(repository.deleteById(7L)).thenReturn(true);
+
+        new MdDocumentService(repository).deleteById(7L);
+
+        verify(repository).deleteById(7L);
+    }
+
+    @Test
+    void deleteByIdReturnsNotFoundWhenDocumentDoesNotExist() {
+        when(repository.deleteById(404L)).thenReturn(false);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> new MdDocumentService(repository).deleteById(404L));
+
+        assertEquals(404, exception.getStatusCode().value());
+    }
 }

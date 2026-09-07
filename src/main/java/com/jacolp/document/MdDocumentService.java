@@ -55,6 +55,12 @@ public class MdDocumentService {
                         HttpStatus.NOT_FOUND, "document not found: " + id));
     }
 
+    public void deleteById(long id) {
+        if (!repository.deleteById(id)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "document not found: " + id);
+        }
+    }
+
     private static String normalizeFileName(String originalFileName) {
         if (originalFileName == null || originalFileName.isBlank()) {
             throw badRequest("file name must not be blank");

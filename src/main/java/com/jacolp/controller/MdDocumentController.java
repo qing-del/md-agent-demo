@@ -6,9 +6,10 @@ import java.util.List;
 import com.jacolp.document.MdDocument;
 import com.jacolp.document.MdDocumentService;
 import com.jacolp.document.MdDocumentSummary;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,6 +40,12 @@ public class MdDocumentController {
     @GetMapping("/{id}")
     public DocumentResponse getById(@PathVariable("id") long id) {
         return DocumentResponse.from(service.getById(id));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable("id") long id) {
+        service.deleteById(id);
+        return ResponseEntity.noContent().build();
     }
 
     public record DocumentResponse(

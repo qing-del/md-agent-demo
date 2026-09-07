@@ -67,4 +67,8 @@ public class MdDocumentRepository {
                 WHERE id = ?
                 """, ROW_MAPPER, id).stream().findFirst();
     }
+
+    public boolean deleteById(long id) {
+        return jdbcTemplate.update("DELETE FROM md_documents WHERE id = ?", id) > 0;
+    }
 }
