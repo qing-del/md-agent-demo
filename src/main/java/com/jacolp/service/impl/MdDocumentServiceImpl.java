@@ -4,10 +4,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 import com.jacolp.document.MdDocument;
-import com.jacolp.document.MdDocumentRepository;
 import com.jacolp.document.MdDocumentSummary;
+import com.jacolp.mapper.MdDocumentMapper;
 import com.jacolp.service.MdDocumentService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -19,10 +20,10 @@ public class MdDocumentServiceImpl implements MdDocumentService {
 
     private static final long MAX_FILE_SIZE_BYTES = 0xFFFF_FFFFL;
 
-    private final MdDocumentRepository repository;
+    private final MdDocumentMapper mapper;
 
-    public MdDocumentServiceImpl(MdDocumentRepository repository) {
-        this.repository = repository;
+    public MdDocumentServiceImpl(MdDocumentMapper mapper) {
+        this.mapper = mapper;
     }
 
     @Override
@@ -43,7 +44,10 @@ public class MdDocumentServiceImpl implements MdDocumentService {
 
         try {
             String content = new String(file.getBytes(), StandardCharsets.UTF_8);
-            return repository.upsert(fileName, content, fileSizeBytes);
+            mapper.upsert(fileName, content, fileSizeBytes);
+            return Optional.ofNullable(mapper.selectByFileName(fileName))
+                    .orElseThrow(() -> new IllegalStateException(
+                            "document was not saved: " + fileName));
         } catch (IOException exception) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "unable to read uploaded file", exception);
@@ -52,19 +56,19 @@ public class MdDocumentServiceImpl implements MdDocumentService {
 
     @Override
     public List<MdDocumentSummary> list() {
-        return repository.findAll();
+        return mapper.selectAll();
     }
 
     @Override
     public MdDocument getById(long id) {
-        return repository.findById(id)
+        return Optional.ofNullable(mapper.selectById(id))
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "document not found: " + id));
     }
 
     @Override
     public void deleteById(long id) {
-        if (!repository.deleteById(id)) {
+        if (mapper.deleteById(id) == 0) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "document not found: " + id);
         }
     }

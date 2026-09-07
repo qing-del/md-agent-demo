@@ -9,8 +9,8 @@ import static org.mockito.Mockito.when;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
+import com.jacolp.mapper.MdDocumentMapper;
 import com.jacolp.service.impl.MdDocumentServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,7 +24,7 @@ import org.springframework.web.server.ResponseStatusException;
 class MdDocumentServiceTest {
 
     @Mock
-    private MdDocumentRepository repository;
+    private MdDocumentMapper mapper;
 
     @Test
     void uploadReadsUtf8MarkdownAndUpsertsByOriginalFileName() throws Exception {
@@ -38,12 +38,13 @@ class MdDocumentServiceTest {
                 bytes.length,
                 LocalDateTime.now(),
                 LocalDateTime.now());
-        when(repository.upsert("README.md", expected.content(), bytes.length)).thenReturn(expected);
+        when(mapper.selectByFileName("README.md")).thenReturn(expected);
 
-        MdDocument actual = new MdDocumentServiceImpl(repository).upload(file);
+        MdDocument actual = new MdDocumentServiceImpl(mapper).upload(file);
 
         assertSame(expected, actual);
-        verify(repository).upsert("README.md", expected.content(), bytes.length);
+        verify(mapper).upsert("README.md", expected.content(), bytes.length);
+        verify(mapper).selectByFileName("README.md");
         assertEquals(bytes.length, actual.fileSizeBytes());
     }
 
@@ -51,64 +52,64 @@ class MdDocumentServiceTest {
     void uploadUsesBasenameWhenClientSendsAPath() throws Exception {
         MultipartFile file = new MockMultipartFile("file", "../notes.md", "text/markdown", "notes".getBytes());
         MdDocument expected = new MdDocument(2L, "notes.md", "notes", 5L, null, null);
-        when(repository.upsert("notes.md", "notes", 5L)).thenReturn(expected);
+        when(mapper.selectByFileName("notes.md")).thenReturn(expected);
 
-        MdDocument actual = new MdDocumentServiceImpl(repository).upload(file);
+        MdDocument actual = new MdDocumentServiceImpl(mapper).upload(file);
 
         assertEquals("notes.md", actual.fileName());
-        verify(repository).upsert("notes.md", "notes", 5L);
+        verify(mapper).upsert("notes.md", "notes", 5L);
     }
 
     @Test
     void listReturnsRepositorySummariesInRepositoryOrder() {
         MdDocumentSummary first = new MdDocumentSummary(1L, "first.md", 10L, null, null);
         MdDocumentSummary second = new MdDocumentSummary(2L, "second.md", 20L, null, null);
-        when(repository.findAll()).thenReturn(List.of(first, second));
+        when(mapper.selectAll()).thenReturn(List.of(first, second));
 
-        List<MdDocumentSummary> actual = new MdDocumentServiceImpl(repository).list();
+        List<MdDocumentSummary> actual = new MdDocumentServiceImpl(mapper).list();
 
         assertEquals(List.of(first, second), actual);
-        verify(repository).findAll();
+        verify(mapper).selectAll();
     }
 
     @Test
     void getByIdReturnsCompleteDocument() {
         MdDocument expected = new MdDocument(3L, "guide.md", "# Guide", 7L, null, null);
-        when(repository.findById(3L)).thenReturn(Optional.of(expected));
+        when(mapper.selectById(3L)).thenReturn(expected);
 
-        MdDocument actual = new MdDocumentServiceImpl(repository).getById(3L);
+        MdDocument actual = new MdDocumentServiceImpl(mapper).getById(3L);
 
         assertSame(expected, actual);
-        verify(repository).findById(3L);
+        verify(mapper).selectById(3L);
     }
 
     @Test
     void getByIdReturnsNotFoundWhenDocumentDoesNotExist() {
-        when(repository.findById(404L)).thenReturn(Optional.empty());
+        when(mapper.selectById(404L)).thenReturn(null);
 
         ResponseStatusException exception = assertThrows(
                 ResponseStatusException.class,
-                () -> new MdDocumentServiceImpl(repository).getById(404L));
+                () -> new MdDocumentServiceImpl(mapper).getById(404L));
 
         assertEquals(404, exception.getStatusCode().value());
     }
 
     @Test
     void deleteByIdDeletesAnExistingDocument() {
-        when(repository.deleteById(7L)).thenReturn(true);
+        when(mapper.deleteById(7L)).thenReturn(1);
 
-        new MdDocumentServiceImpl(repository).deleteById(7L);
+        new MdDocumentServiceImpl(mapper).deleteById(7L);
 
-        verify(repository).deleteById(7L);
+        verify(mapper).deleteById(7L);
     }
 
     @Test
     void deleteByIdReturnsNotFoundWhenDocumentDoesNotExist() {
-        when(repository.deleteById(404L)).thenReturn(false);
+        when(mapper.deleteById(404L)).thenReturn(0);
 
         ResponseStatusException exception = assertThrows(
                 ResponseStatusException.class,
-                () -> new MdDocumentServiceImpl(repository).deleteById(404L));
+                () -> new MdDocumentServiceImpl(mapper).deleteById(404L));
 
         assertEquals(404, exception.getStatusCode().value());
     }
