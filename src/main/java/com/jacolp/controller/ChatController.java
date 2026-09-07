@@ -2,7 +2,7 @@ package com.jacolp.controller;
 
 import java.util.UUID;
 
-import com.jacolp.service.ChatContextManager;
+import com.jacolp.agent.context.ChatContextManager;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.http.HttpStatus;

@@ -15,6 +15,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jacolp.agent.context.ChatContextManager;
+import com.jacolp.agent.context.ChatSessionFlushScheduler;
 import com.jacolp.mapper.ChatSessionMapper;
 import com.jacolp.pojo.entity.ChatSession;
 import org.junit.jupiter.api.AfterEach;

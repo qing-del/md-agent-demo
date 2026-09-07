@@ -1,6 +1,6 @@
 package com.jacolp.config;
 
-import com.jacolp.service.ChatContextManager;
+import com.jacolp.agent.context.ChatContextManager;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.context.annotation.Bean;

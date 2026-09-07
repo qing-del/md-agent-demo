@@ -11,6 +11,7 @@ import java.util.List;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jacolp.agent.context.ChatContextManager;
 import com.jacolp.mapper.ChatSessionMapper;
 import com.jacolp.pojo.entity.ChatSession;
 import org.junit.jupiter.api.Test;

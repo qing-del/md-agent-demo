@@ -13,7 +13,7 @@ import java.util.function.Consumer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jacolp.mapper.ChatSessionMapper;
 import com.jacolp.pojo.entity.ChatSession;
-import com.jacolp.service.ChatContextManager;
+import com.jacolp.agent.context.ChatContextManager;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
