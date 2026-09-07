@@ -1,20 +1,27 @@
 spring:
+  profiles:
+    active: dev
   application:
     name: md-agent
   datasource:
-    url: "${DB_URL:jdbc:mysql://localhost:3306/md_agent_demo?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai}"
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:}
+    url: "jdbc:mysql://${mysql.host}:${mysql.port}/${mysql.db-name}?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai"
+    username: ${mysql.username}
+    password: ${mysql.password}
   sql:
     init:
       mode: ${DB_INIT_MODE:always}
       schema-locations: "${DB_SCHEMA_LOCATION:optional:file:static/init.sql}"
   ai:
     openai:
-      api-key: ${OPENAI_API_KEY}
+      base-url: ${AI_QWEN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+      api-key: ${ai.qwen.api-key}
       chat:
         options:
-          model: ${OPENAI_MODEL:gpt-4o-mini}
+          model: ${ai.qwen.model[0]}
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
 
 server:
   port: ${SERVER_PORT:8080}
