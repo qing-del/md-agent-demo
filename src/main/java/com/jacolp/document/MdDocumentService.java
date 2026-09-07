@@ -2,6 +2,7 @@ package com.jacolp.document;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Locale;
 
 import org.springframework.http.HttpStatus;
@@ -42,6 +43,10 @@ public class MdDocumentService {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "unable to read uploaded file", exception);
         }
+    }
+
+    public List<MdDocumentSummary> list() {
+        return repository.findAll();
     }
 
     private static String normalizeFileName(String originalFileName) {

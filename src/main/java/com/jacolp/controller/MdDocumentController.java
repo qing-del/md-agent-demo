@@ -1,9 +1,12 @@
 package com.jacolp.controller;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import com.jacolp.document.MdDocument;
 import com.jacolp.document.MdDocumentService;
+import com.jacolp.document.MdDocumentSummary;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,6 +30,11 @@ public class MdDocumentController {
         return ResponseEntity.ok(DocumentResponse.from(service.upload(file)));
     }
 
+    @GetMapping
+    public List<DocumentSummaryResponse> list() {
+        return service.list().stream().map(DocumentSummaryResponse::from).toList();
+    }
+
     public record DocumentResponse(
             long id,
             String fileName,
@@ -40,6 +48,23 @@ public class MdDocumentController {
                     document.id(),
                     document.fileName(),
                     document.content(),
+                    document.fileSizeBytes(),
+                    document.createdAt(),
+                    document.updatedAt());
+        }
+    }
+
+    public record DocumentSummaryResponse(
+            long id,
+            String fileName,
+            long fileSizeBytes,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt) {
+
+        private static DocumentSummaryResponse from(MdDocumentSummary document) {
+            return new DocumentSummaryResponse(
+                    document.id(),
+                    document.fileName(),
                     document.fileSizeBytes(),
                     document.createdAt(),
                     document.updatedAt());

@@ -1,5 +1,6 @@
 package com.jacolp.document;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -13,6 +14,13 @@ public class MdDocumentRepository {
             resultSet.getLong("id"),
             resultSet.getString("file_name"),
             resultSet.getString("content"),
+            resultSet.getLong("file_size_bytes"),
+            resultSet.getObject("created_at", java.time.LocalDateTime.class),
+            resultSet.getObject("updated_at", java.time.LocalDateTime.class));
+
+    private static final RowMapper<MdDocumentSummary> SUMMARY_ROW_MAPPER = (resultSet, rowNum) -> new MdDocumentSummary(
+            resultSet.getLong("id"),
+            resultSet.getString("file_name"),
             resultSet.getLong("file_size_bytes"),
             resultSet.getObject("created_at", java.time.LocalDateTime.class),
             resultSet.getObject("updated_at", java.time.LocalDateTime.class));
@@ -42,5 +50,13 @@ public class MdDocumentRepository {
                 FROM md_documents
                 WHERE file_name = ?
                 """, ROW_MAPPER, fileName).stream().findFirst();
+    }
+
+    public List<MdDocumentSummary> findAll() {
+        return jdbcTemplate.query("""
+                SELECT id, file_name, file_size_bytes, created_at, updated_at
+                FROM md_documents
+                ORDER BY updated_at DESC, id DESC
+                """, SUMMARY_ROW_MAPPER);
     }
 }

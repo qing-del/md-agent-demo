@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -52,5 +53,17 @@ class MdDocumentServiceTest {
 
         assertEquals("notes.md", actual.fileName());
         verify(repository).upsert("notes.md", "notes", 5L);
+    }
+
+    @Test
+    void listReturnsRepositorySummariesInRepositoryOrder() {
+        MdDocumentSummary first = new MdDocumentSummary(1L, "first.md", 10L, null, null);
+        MdDocumentSummary second = new MdDocumentSummary(2L, "second.md", 20L, null, null);
+        when(repository.findAll()).thenReturn(List.of(first, second));
+
+        List<MdDocumentSummary> actual = new MdDocumentService(repository).list();
+
+        assertEquals(List.of(first, second), actual);
+        verify(repository).findAll();
     }
 }
