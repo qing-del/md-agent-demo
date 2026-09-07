@@ -1,8 +1,7 @@
-package com.jacolp.document;
+package com.jacolp.service.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -11,9 +10,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import com.jacolp.mapper.MdDocumentMapper;
-import com.jacolp.service.impl.MdDocumentServiceImpl;
+import com.jacolp.pojo.entity.MdDocument;
+import com.jacolp.pojo.vo.MdDocumentSummaryVO;
+import com.jacolp.pojo.vo.MdDocumentVO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
@@ -21,7 +23,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 @ExtendWith(MockitoExtension.class)
-class MdDocumentServiceTest {
+class MdDocumentServiceImplTest {
 
     @Mock
     private MdDocumentMapper mapper;
@@ -40,12 +42,16 @@ class MdDocumentServiceTest {
                 LocalDateTime.now());
         when(mapper.selectByFileName("README.md")).thenReturn(expected);
 
-        MdDocument actual = new MdDocumentServiceImpl(mapper).upload(file);
+        MdDocumentVO actual = new MdDocumentServiceImpl(mapper).upload(file);
 
-        assertSame(expected, actual);
-        verify(mapper).upsert("README.md", expected.content(), bytes.length);
+        assertEquals(expected.getFileName(), actual.getFileName());
+        assertEquals(expected.getContent(), actual.getContent());
+        ArgumentCaptor<MdDocument> documentCaptor = ArgumentCaptor.forClass(MdDocument.class);
+        verify(mapper).upsert(documentCaptor.capture());
+        assertEquals("README.md", documentCaptor.getValue().getFileName());
+        assertEquals(expected.getContent(), documentCaptor.getValue().getContent());
+        assertEquals(bytes.length, documentCaptor.getValue().getFileSizeBytes());
         verify(mapper).selectByFileName("README.md");
-        assertEquals(bytes.length, actual.fileSizeBytes());
     }
 
     @Test
@@ -54,32 +60,33 @@ class MdDocumentServiceTest {
         MdDocument expected = new MdDocument(2L, "notes.md", "notes", 5L, null, null);
         when(mapper.selectByFileName("notes.md")).thenReturn(expected);
 
-        MdDocument actual = new MdDocumentServiceImpl(mapper).upload(file);
+        MdDocumentVO actual = new MdDocumentServiceImpl(mapper).upload(file);
 
-        assertEquals("notes.md", actual.fileName());
-        verify(mapper).upsert("notes.md", "notes", 5L);
+        assertEquals("notes.md", actual.getFileName());
+        verify(mapper).selectByFileName("notes.md");
     }
 
     @Test
-    void listReturnsRepositorySummariesInRepositoryOrder() {
-        MdDocumentSummary first = new MdDocumentSummary(1L, "first.md", 10L, null, null);
-        MdDocumentSummary second = new MdDocumentSummary(2L, "second.md", 20L, null, null);
+    void listReturnsSummaryViewsInMapperOrder() {
+        MdDocument first = new MdDocument(1L, "first.md", null, 10L, null, null);
+        MdDocument second = new MdDocument(2L, "second.md", null, 20L, null, null);
         when(mapper.selectAll()).thenReturn(List.of(first, second));
 
-        List<MdDocumentSummary> actual = new MdDocumentServiceImpl(mapper).list();
+        List<MdDocumentSummaryVO> actual = new MdDocumentServiceImpl(mapper).list();
 
-        assertEquals(List.of(first, second), actual);
+        assertEquals("first.md", actual.get(0).getFileName());
+        assertEquals("second.md", actual.get(1).getFileName());
         verify(mapper).selectAll();
     }
 
     @Test
-    void getByIdReturnsCompleteDocument() {
+    void getByIdReturnsCompleteDocumentView() {
         MdDocument expected = new MdDocument(3L, "guide.md", "# Guide", 7L, null, null);
         when(mapper.selectById(3L)).thenReturn(expected);
 
-        MdDocument actual = new MdDocumentServiceImpl(mapper).getById(3L);
+        MdDocumentVO actual = new MdDocumentServiceImpl(mapper).getById(3L);
 
-        assertSame(expected, actual);
+        assertEquals(expected.getContent(), actual.getContent());
         verify(mapper).selectById(3L);
     }
 

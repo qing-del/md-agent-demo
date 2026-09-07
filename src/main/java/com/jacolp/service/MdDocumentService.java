@@ -2,17 +2,17 @@ package com.jacolp.service;
 
 import java.util.List;
 
-import com.jacolp.document.MdDocument;
-import com.jacolp.document.MdDocumentSummary;
+import com.jacolp.pojo.vo.MdDocumentSummaryVO;
+import com.jacolp.pojo.vo.MdDocumentVO;
 import org.springframework.web.multipart.MultipartFile;
 
 public interface MdDocumentService {
 
-    MdDocument upload(MultipartFile file);
+    MdDocumentVO upload(MultipartFile file);
 
-    List<MdDocumentSummary> list();
+    List<MdDocumentSummaryVO> list();
 
-    MdDocument getById(long id);
+    MdDocumentVO getById(long id);
 
     void deleteById(long id);
 }

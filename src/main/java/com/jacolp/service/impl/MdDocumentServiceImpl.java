@@ -6,9 +6,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
-import com.jacolp.document.MdDocument;
-import com.jacolp.document.MdDocumentSummary;
 import com.jacolp.mapper.MdDocumentMapper;
+import com.jacolp.pojo.dto.MdDocumentDTO;
+import com.jacolp.pojo.entity.MdDocument;
+import com.jacolp.pojo.vo.MdDocumentSummaryVO;
+import com.jacolp.pojo.vo.MdDocumentVO;
 import com.jacolp.service.MdDocumentService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -27,7 +29,7 @@ public class MdDocumentServiceImpl implements MdDocumentService {
     }
 
     @Override
-    public MdDocument upload(MultipartFile file) {
+    public MdDocumentVO upload(MultipartFile file) {
         if (file == null) {
             throw badRequest("file must be provided");
         }
@@ -44,10 +46,12 @@ public class MdDocumentServiceImpl implements MdDocumentService {
 
         try {
             String content = new String(file.getBytes(), StandardCharsets.UTF_8);
-            mapper.upsert(fileName, content, fileSizeBytes);
-            return Optional.ofNullable(mapper.selectByFileName(fileName))
+            MdDocumentDTO documentDTO = new MdDocumentDTO(fileName, content, fileSizeBytes);
+            MdDocument document = toEntity(documentDTO);
+            mapper.upsert(document);
+            return MdDocumentVO.from(Optional.ofNullable(mapper.selectByFileName(fileName))
                     .orElseThrow(() -> new IllegalStateException(
-                            "document was not saved: " + fileName));
+                            "document was not saved: " + fileName)));
         } catch (IOException exception) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "unable to read uploaded file", exception);
@@ -55,15 +59,15 @@ public class MdDocumentServiceImpl implements MdDocumentService {
     }
 
     @Override
-    public List<MdDocumentSummary> list() {
-        return mapper.selectAll();
+    public List<MdDocumentSummaryVO> list() {
+        return mapper.selectAll().stream().map(MdDocumentSummaryVO::from).toList();
     }
 
     @Override
-    public MdDocument getById(long id) {
-        return Optional.ofNullable(mapper.selectById(id))
+    public MdDocumentVO getById(long id) {
+        return MdDocumentVO.from(Optional.ofNullable(mapper.selectById(id))
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "document not found: " + id));
+                        HttpStatus.NOT_FOUND, "document not found: " + id)));
     }
 
     @Override
@@ -95,5 +99,13 @@ public class MdDocumentServiceImpl implements MdDocumentService {
 
     private static ResponseStatusException badRequest(String message) {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
+    }
+
+    private static MdDocument toEntity(MdDocumentDTO documentDTO) {
+        MdDocument document = new MdDocument();
+        document.setFileName(documentDTO.getFileName());
+        document.setContent(documentDTO.getContent());
+        document.setFileSizeBytes(documentDTO.getFileSizeBytes());
+        return document;
     }
 }
