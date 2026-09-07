@@ -4,8 +4,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import com.jacolp.document.MdDocument;
-import com.jacolp.document.MdDocumentService;
 import com.jacolp.document.MdDocumentSummary;
+import com.jacolp.service.MdDocumentService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;

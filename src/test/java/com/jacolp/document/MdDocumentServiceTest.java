@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import com.jacolp.service.impl.MdDocumentServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -39,7 +40,7 @@ class MdDocumentServiceTest {
                 LocalDateTime.now());
         when(repository.upsert("README.md", expected.content(), bytes.length)).thenReturn(expected);
 
-        MdDocument actual = new MdDocumentService(repository).upload(file);
+        MdDocument actual = new MdDocumentServiceImpl(repository).upload(file);
 
         assertSame(expected, actual);
         verify(repository).upsert("README.md", expected.content(), bytes.length);
@@ -52,7 +53,7 @@ class MdDocumentServiceTest {
         MdDocument expected = new MdDocument(2L, "notes.md", "notes", 5L, null, null);
         when(repository.upsert("notes.md", "notes", 5L)).thenReturn(expected);
 
-        MdDocument actual = new MdDocumentService(repository).upload(file);
+        MdDocument actual = new MdDocumentServiceImpl(repository).upload(file);
 
         assertEquals("notes.md", actual.fileName());
         verify(repository).upsert("notes.md", "notes", 5L);
@@ -64,7 +65,7 @@ class MdDocumentServiceTest {
         MdDocumentSummary second = new MdDocumentSummary(2L, "second.md", 20L, null, null);
         when(repository.findAll()).thenReturn(List.of(first, second));
 
-        List<MdDocumentSummary> actual = new MdDocumentService(repository).list();
+        List<MdDocumentSummary> actual = new MdDocumentServiceImpl(repository).list();
 
         assertEquals(List.of(first, second), actual);
         verify(repository).findAll();
@@ -75,7 +76,7 @@ class MdDocumentServiceTest {
         MdDocument expected = new MdDocument(3L, "guide.md", "# Guide", 7L, null, null);
         when(repository.findById(3L)).thenReturn(Optional.of(expected));
 
-        MdDocument actual = new MdDocumentService(repository).getById(3L);
+        MdDocument actual = new MdDocumentServiceImpl(repository).getById(3L);
 
         assertSame(expected, actual);
         verify(repository).findById(3L);
@@ -87,7 +88,7 @@ class MdDocumentServiceTest {
 
         ResponseStatusException exception = assertThrows(
                 ResponseStatusException.class,
-                () -> new MdDocumentService(repository).getById(404L));
+                () -> new MdDocumentServiceImpl(repository).getById(404L));
 
         assertEquals(404, exception.getStatusCode().value());
     }
@@ -96,7 +97,7 @@ class MdDocumentServiceTest {
     void deleteByIdDeletesAnExistingDocument() {
         when(repository.deleteById(7L)).thenReturn(true);
 
-        new MdDocumentService(repository).deleteById(7L);
+        new MdDocumentServiceImpl(repository).deleteById(7L);
 
         verify(repository).deleteById(7L);
     }
@@ -107,7 +108,7 @@ class MdDocumentServiceTest {
 
         ResponseStatusException exception = assertThrows(
                 ResponseStatusException.class,
-                () -> new MdDocumentService(repository).deleteById(404L));
+                () -> new MdDocumentServiceImpl(repository).deleteById(404L));
 
         assertEquals(404, exception.getStatusCode().value());
     }

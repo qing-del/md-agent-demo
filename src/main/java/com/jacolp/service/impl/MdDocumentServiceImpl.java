@@ -1,26 +1,31 @@
-package com.jacolp.document;
+package com.jacolp.service.impl;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 
+import com.jacolp.document.MdDocument;
+import com.jacolp.document.MdDocumentRepository;
+import com.jacolp.document.MdDocumentSummary;
+import com.jacolp.service.MdDocumentService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
-public class MdDocumentService {
+public class MdDocumentServiceImpl implements MdDocumentService {
 
     private static final long MAX_FILE_SIZE_BYTES = 0xFFFF_FFFFL;
 
     private final MdDocumentRepository repository;
 
-    public MdDocumentService(MdDocumentRepository repository) {
+    public MdDocumentServiceImpl(MdDocumentRepository repository) {
         this.repository = repository;
     }
 
+    @Override
     public MdDocument upload(MultipartFile file) {
         if (file == null) {
             throw badRequest("file must be provided");
@@ -45,16 +50,19 @@ public class MdDocumentService {
         }
     }
 
+    @Override
     public List<MdDocumentSummary> list() {
         return repository.findAll();
     }
 
+    @Override
     public MdDocument getById(long id) {
         return repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "document not found: " + id));
     }
 
+    @Override
     public void deleteById(long id) {
         if (!repository.deleteById(id)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "document not found: " + id);
