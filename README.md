@@ -16,8 +16,10 @@ mvn spring-boot:run
 ```bash
 curl -X POST http://localhost:8080/api/chat \
   -H 'Content-Type: application/json' \
-  -d '{"message":"用一句话介绍 Spring AI"}'
+  -d '{"chatSessionId":1,"message":"用一句话介绍 Spring AI"}'
 ```
+
+`chatSessionId` 必须对应一个已经存在的聊天会话。
 
 返回：
 
