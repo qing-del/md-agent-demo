@@ -1,6 +1,14 @@
 spring:
   application:
     name: md-agent
+  datasource:
+    url: "${DB_URL:jdbc:mysql://localhost:3306/md_agent_demo?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai}"
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+  sql:
+    init:
+      mode: ${DB_INIT_MODE:always}
+      schema-locations: "${DB_SCHEMA_LOCATION:optional:file:static/init.sql}"
   ai:
     openai:
       api-key: ${OPENAI_API_KEY}
