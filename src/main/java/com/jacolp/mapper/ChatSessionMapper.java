@@ -83,6 +83,32 @@ public interface ChatSessionMapper {
     List<ChatSession> selectAll();
 
     /**
+     * 按标题查询聊天会话摘要，避免读取完整消息和文件引用 JSON。
+     *
+     * @param title 已规范化的标题查询词；为空时查询全部会话
+     * @return 聊天会话摘要对应的实体列表
+     */
+    @Select("""
+            <script>
+            SELECT session_key, title, created_at, updated_at
+            FROM chat_sessions
+            <where>
+                <if test="title != null and title != ''">
+                    title LIKE CONCAT('%', #{title}, '%') ESCAPE '!'
+                </if>
+            </where>
+            ORDER BY updated_at DESC, id DESC
+            </script>
+            """)
+    @Results(id = "chatSessionSummaryResultMap", value = {
+        @Result(property = "sessionKey", column = "session_key"),
+        @Result(property = "title", column = "title"),
+        @Result(property = "createdAt", column = "created_at"),
+        @Result(property = "updatedAt", column = "updated_at")
+    })
+    List<ChatSession> selectSummaryList(@Param("title") String title);
+
+    /**
      * 一次性更新聊天会话的标题、消息和文件引用快照。
      *
      * @param session 包含最新快照的聊天会话
