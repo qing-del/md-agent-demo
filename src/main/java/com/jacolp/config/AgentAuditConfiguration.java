@@ -2,6 +2,7 @@ package com.jacolp.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jacolp.agent.audit.LlmPromptObservationHandler;
+import com.jacolp.agent.audit.ToolCallObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,9 +19,18 @@ public class AgentAuditConfiguration {
     }
 
     @Bean
-    ObservationRegistry observationRegistry(LlmPromptObservationHandler llmPromptObservationHandler) {
+    ToolCallObservationHandler toolCallObservationHandler(ObjectMapper objectMapper) {
+        return new ToolCallObservationHandler(objectMapper);
+    }
+
+    @Bean
+    ObservationRegistry observationRegistry(
+            LlmPromptObservationHandler llmPromptObservationHandler,
+            ToolCallObservationHandler toolCallObservationHandler) {
         ObservationRegistry registry = ObservationRegistry.create();
-        registry.observationConfig().observationHandler(llmPromptObservationHandler);
+        registry.observationConfig()
+                .observationHandler(llmPromptObservationHandler)
+                .observationHandler(toolCallObservationHandler);
         return registry;
     }
 
