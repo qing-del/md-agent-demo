@@ -142,18 +142,15 @@ public final class MarkdownManager {
     }
 
     /**
-     * 返回指定节点完整章节的第一页文本。
+     * 返回指定节点完整章节的第一页分页结果。
      *
      * @param documentId 已持久化文档的标识
      * @param nodeNumber 按原文顺序分配的节点编号
-     * @return 第一页文本；仍有后续字节时追加动态省略号
+     * @return 第一页 {@link SectionPage}；章节一次读取完毕时 {@code nextCursor} 为 {@code null}
      */
-    public String getSectionAll(DocumentId documentId, int nodeNumber) {
-        MarkdownContext context = getEntity(documentId);
-        SectionNode node = requireNode(context, nodeNumber);
-        // 无 cursor 时从章节起点读取，并由 readPage 按 UTF-8 字节限制截断。
-        PageSlice page = readPage(context, node, 0);
-        return page.content() + (page.hasMore() ? "..." : "");
+    public SectionPage getSectionAll(DocumentId documentId, int nodeNumber) {
+        // 无 cursor 的快捷入口统一委托分页实现，确保第一页和后续页使用完全相同的边界规则。
+        return getSectionAll(documentId, nodeNumber, null);
     }
 
     /**
