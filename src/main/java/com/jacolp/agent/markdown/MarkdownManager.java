@@ -1,6 +1,8 @@
 package com.jacolp.agent.markdown;
 
 import java.util.Objects;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -8,6 +10,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import com.jacolp.agent.markdown.exception.MarkdownContextNotFoundException;
 import com.jacolp.agent.markdown.model.MarkdownContext;
+import com.jacolp.agent.markdown.model.SectionNode;
 
 /**
  * Framework-neutral manager for UUID-keyed Markdown contexts.
@@ -70,6 +73,55 @@ public final class MarkdownManager {
             throw new MarkdownContextNotFoundException(key);
         }
         return context;
+    }
+
+    /**
+     * Renders the numbered heading tree in source order.
+     *
+     * @param key context UUID
+     * @return one numbered heading per line, indented by logical tree depth
+     */
+    public String getHeadingTree(UUID key) {
+        MarkdownContext context = getEntity(key);
+        StringBuilder result = new StringBuilder();
+        Set<Integer> rendered = new HashSet<>();
+        for (Integer rootNodeId : context.getRootNodeIds()) {
+            appendHeadingTree(context, rootNodeId, 0, result, rendered);
+        }
+        return result.toString();
+    }
+
+    private static void appendHeadingTree(
+            MarkdownContext context,
+            int nodeNumber,
+            int depth,
+            StringBuilder result,
+            Set<Integer> rendered) {
+        SectionNode node = context.getNodes().get(nodeNumber);
+        if (node == null || !rendered.add(nodeNumber)) {
+            return;
+        }
+        if (result.length() > 0) {
+            result.append('\n');
+        }
+        result.append("  ".repeat(depth))
+                .append(node.getNumber())
+                .append(". ")
+                .append(rawHeading(context, node));
+        for (Integer child : node.getChildren()) {
+            appendHeadingTree(context, child, depth + 1, result, rendered);
+        }
+    }
+
+    private static String rawHeading(MarkdownContext context, SectionNode node) {
+        String heading = context.getSource().substring(node.getHeadingStart(), node.getBodyStart());
+        if (heading.endsWith("\r\n")) {
+            return heading.substring(0, heading.length() - 2);
+        }
+        if (heading.endsWith("\r") || heading.endsWith("\n")) {
+            return heading.substring(0, heading.length() - 1);
+        }
+        return heading;
     }
 
     MarkdownStore store() {
