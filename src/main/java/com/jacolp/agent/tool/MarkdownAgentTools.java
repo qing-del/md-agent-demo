@@ -46,4 +46,21 @@ public class MarkdownAgentTools {
         DocumentId id = this.contextProvider.ensureLoaded(documentId);
         return this.markdownManager.getHeadingTree(id);
     }
+
+    /**
+     * 读取指定章节的直接正文和直属子标题预览。
+     *
+     * @param documentId 文档主键
+     * @param nodeNumber 章节节点编号
+     * @return 章节预览文本
+     */
+    @Tool(
+            name = "get_section_preview",
+            description = "读取指定 Markdown 章节的标题、直属正文和直属子标题预览，不展开孙级章节。")
+    public String getSectionPreview(
+            @ToolParam(description = "数据库中的 Markdown 文档 ID") long documentId,
+            @ToolParam(description = "文章概览中返回的章节节点编号") int nodeNumber) {
+        DocumentId id = this.contextProvider.ensureLoaded(documentId);
+        return this.markdownManager.getSectionPreview(id, nodeNumber);
+    }
 }
