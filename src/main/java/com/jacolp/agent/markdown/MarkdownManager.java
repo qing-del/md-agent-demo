@@ -6,6 +6,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantLock;
 
+import com.jacolp.agent.markdown.exception.MarkdownContextNotFoundException;
 import com.jacolp.agent.markdown.model.MarkdownContext;
 
 /**
@@ -52,6 +53,22 @@ public final class MarkdownManager {
     public MarkdownContext register(UUID key, String source) {
         MarkdownContext context = this.parser.parse(key, source);
         this.contexts.put(key, context);
+        return context;
+    }
+
+    /**
+     * Gets the immutable snapshot registered under a UUID.
+     *
+     * @param key context UUID
+     * @return current immutable context
+     * @throws MarkdownContextNotFoundException when the UUID is unknown
+     */
+    public MarkdownContext getEntity(UUID key) {
+        Objects.requireNonNull(key, "key cannot be null");
+        MarkdownContext context = this.contexts.get(key);
+        if (context == null) {
+            throw new MarkdownContextNotFoundException(key);
+        }
         return context;
     }
 
