@@ -1,6 +1,7 @@
 package com.jacolp.config;
 
 import com.jacolp.agent.context.ChatContextManager;
+import com.jacolp.agent.tool.MarkdownAgentTools;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.context.annotation.Bean;
@@ -20,9 +21,13 @@ public class ChatClientConfiguration {
      * @return 配置完成的聊天客户端
      */
     @Bean
-    ChatClient chatClient(ChatClient.Builder chatClientBuilder, ChatContextManager chatContextManager) {
+    ChatClient chatClient(
+            ChatClient.Builder chatClientBuilder,
+            ChatContextManager chatContextManager,
+            MarkdownAgentTools markdownAgentTools) {
         return chatClientBuilder
                 .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatContextManager).build())
+                .defaultTools(markdownAgentTools)
                 .build();
     }
 }

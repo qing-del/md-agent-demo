@@ -76,6 +76,16 @@ public final class MarkdownManager {
     }
 
     /**
+     * 移除指定文档的内存快照。
+     *
+     * @param documentId 要移除的文档标识
+     */
+    public void unregister(DocumentId documentId) {
+        Objects.requireNonNull(documentId, "documentId cannot be null");
+        this.contexts.remove(documentId);
+    }
+
+    /**
      * 获取 DocumentId 对应的当前不可变快照。
      *
      * @param documentId 已持久化文档的标识

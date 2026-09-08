@@ -11,6 +11,7 @@ import org.apache.ibatis.annotations.Result;
 import org.apache.ibatis.annotations.ResultMap;
 import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 /**
  * 提供 Markdown 文档的数据库访问方法。
@@ -75,6 +76,24 @@ public interface MdDocumentMapper {
             """)
     @ResultMap("mdDocumentResultMap")
     MdDocument selectById(@Param("id") long id);
+
+    /**
+     * 根据主键更新 Markdown 正文及其 UTF-8 字节数。
+     *
+     * @param id 文档主键
+     * @param content 新的 Markdown 正文
+     * @param fileSizeBytes 新正文的 UTF-8 字节数
+     * @return 受影响的行数
+     */
+    @Update("""
+            UPDATE md_documents
+            SET content = #{content}, file_size_bytes = #{fileSizeBytes}
+            WHERE id = #{id}
+            """)
+    int updateContentById(
+            @Param("id") long id,
+            @Param("content") String content,
+            @Param("fileSizeBytes") long fileSizeBytes);
 
     /**
      * 根据主键删除文档。
