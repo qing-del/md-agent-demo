@@ -61,6 +61,12 @@ class MdDocumentMapperTest {
         MdDocument updated = mapper.selectById(saved.getId());
         assertEquals("# Updated", updated.getContent());
         assertEquals(9L, updated.getFileSizeBytes());
+
+        assertEquals(1, mapper.updateContentById(saved.getId(), "# By ID", 6L));
+        MdDocument updatedById = mapper.selectById(saved.getId());
+        assertEquals("# By ID", updatedById.getContent());
+        assertEquals(6L, updatedById.getFileSizeBytes());
+
         List<MdDocument> documents = mapper.selectAll();
         assertEquals(1, documents.size());
 
