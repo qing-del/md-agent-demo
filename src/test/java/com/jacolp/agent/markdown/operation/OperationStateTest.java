@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.UUID;
 
+import com.jacolp.agent.markdown.model.DocumentId;
 import com.jacolp.agent.markdown.model.SectionNodeRef;
 import org.junit.jupiter.api.Test;
 
@@ -14,7 +15,7 @@ class OperationStateTest {
     void startsPendingAndSupportsOnlyExpectedAtomicTransitions() {
         OperationState state = new OperationState(
                 UUID.randomUUID(),
-                new SectionNodeRef(UUID.randomUUID(), 1),
+                new SectionNodeRef(new DocumentId(1L), 1),
                 "old",
                 "new");
 

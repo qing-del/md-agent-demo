@@ -5,20 +5,20 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import java.util.List;
-import java.util.UUID;
 
+import com.jacolp.agent.markdown.model.DocumentId;
 import com.jacolp.agent.markdown.model.MarkdownContext;
 import com.jacolp.agent.markdown.model.SectionNode;
 import org.junit.jupiter.api.Test;
 
 class MarkdownAstParserTest {
 
-    private static final UUID KEY = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
+    private static final DocumentId DOCUMENT_ID = new DocumentId(1L);
 
     @Test
     void parsesTopLevelHeadingsAndBuildsStackBasedTree() {
         String source = "preamble\n\n# Java\nJava body\n\n## 安装\nJDK body\n\n### JDK 版本选择\nchoice\n\n## 开发工具\nIDE body\n\n# Python\nPython body\n";
-        MarkdownContext context = new MarkdownAstParser().parse(KEY, source);
+        MarkdownContext context = new MarkdownAstParser().parse(DOCUMENT_ID, source);
 
         assertEquals(List.of(1, 5), context.getRootNodeIds());
         assertEquals(List.of(2, 4), context.getNodes().get(1).getChildren());
@@ -35,7 +35,7 @@ class MarkdownAstParserTest {
     @Test
     void ignoresHeadingsInsideListsQuotesAndFencedCodeAndKeepsDuplicateTitles() {
         String source = "- # list\n\n> ## quote\n\n```markdown\n### code\n```\n\n# Java\nbody\n\n# Java\nbody 2\n";
-        MarkdownContext context = new MarkdownAstParser().parse(KEY, source);
+        MarkdownContext context = new MarkdownAstParser().parse(DOCUMENT_ID, source);
 
         assertEquals(List.of(1, 2), context.getRootNodeIds());
         assertEquals("Java", context.getNodes().get(1).getTitle());
@@ -47,7 +47,7 @@ class MarkdownAstParserTest {
     @Test
     void keepsSourceWhenNoHeadingExists() {
         String source = "plain text\n\nwithout a heading\n";
-        MarkdownContext context = new MarkdownAstParser().parse(KEY, source);
+        MarkdownContext context = new MarkdownAstParser().parse(DOCUMENT_ID, source);
 
         assertEquals(source, context.getSource());
         assertEquals(List.of(), context.getRootNodeIds());

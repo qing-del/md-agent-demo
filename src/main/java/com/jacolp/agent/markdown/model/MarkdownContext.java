@@ -5,14 +5,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 
 /**
  * 不可变的 Markdown 快照及其解析后的章节索引。
  */
 public final class MarkdownContext {
 
-    private final UUID key;
+    private final DocumentId documentId;
 
     private final String revision;
 
@@ -25,19 +24,19 @@ public final class MarkdownContext {
     /**
      * 创建一个 Markdown 上下文快照。
      *
-     * @param key 上下文 UUID
+     * @param documentId 已持久化文档的标识
      * @param revision 当前内容 revision
      * @param source 完整 Markdown 原文
      * @param rootNodeIds 按原文顺序排列的根节点编号
      * @param nodes 按节点编号索引的章节节点
      */
     public MarkdownContext(
-            UUID key,
+            DocumentId documentId,
             String revision,
             String source,
             List<Integer> rootNodeIds,
             Map<Integer, SectionNode> nodes) {
-        this.key = Objects.requireNonNull(key, "key cannot be null");
+        this.documentId = Objects.requireNonNull(documentId, "documentId cannot be null");
         this.revision = Objects.requireNonNull(revision, "revision cannot be null");
         this.source = Objects.requireNonNull(source, "source cannot be null");
         this.rootNodeIds = List.copyOf(Objects.requireNonNull(rootNodeIds, "rootNodeIds cannot be null"));
@@ -53,12 +52,12 @@ public final class MarkdownContext {
     }
 
     /**
-     * 获取上下文 UUID。
+     * 获取已持久化文档的标识。
      *
-     * @return 上下文 UUID
+     * @return 文档标识
      */
-    public UUID getKey() {
-        return this.key;
+    public DocumentId getDocumentId() {
+        return this.documentId;
     }
 
     /**

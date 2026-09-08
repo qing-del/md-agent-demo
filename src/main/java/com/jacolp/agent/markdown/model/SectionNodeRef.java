@@ -1,25 +1,24 @@
 package com.jacolp.agent.markdown.model;
 
 import java.util.Objects;
-import java.util.UUID;
 
 /**
  * 标识一个 Markdown 上下文中的指定章节。
  */
 public final class SectionNodeRef {
 
-    private final UUID key;
+    private final DocumentId documentId;
 
     private final int nodeNumber;
 
     /**
      * 创建章节引用。
      *
-     * @param key 上下文 UUID
+     * @param documentId 已持久化文档的标识
      * @param nodeNumber 节点编号
      */
-    public SectionNodeRef(UUID key, int nodeNumber) {
-        this.key = Objects.requireNonNull(key, "key cannot be null");
+    public SectionNodeRef(DocumentId documentId, int nodeNumber) {
+        this.documentId = Objects.requireNonNull(documentId, "documentId cannot be null");
         if (nodeNumber <= 0) {
             // 节点编号从 1 开始，非法编号不能参与查询或替换。
             throw new IllegalArgumentException("nodeNumber must be positive");
@@ -28,12 +27,12 @@ public final class SectionNodeRef {
     }
 
     /**
-     * 获取引用对应的上下文 UUID。
+     * 获取引用对应的文档标识。
      *
-     * @return 上下文 UUID
+     * @return 文档标识
      */
-    public UUID getKey() {
-        return this.key;
+    public DocumentId getDocumentId() {
+        return this.documentId;
     }
 
     /**

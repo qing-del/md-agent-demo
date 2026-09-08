@@ -6,18 +6,19 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.util.UUID;
 
 import com.jacolp.agent.markdown.MarkdownManager;
+import com.jacolp.agent.markdown.model.DocumentId;
 import com.jacolp.agent.markdown.model.SectionNodeRef;
 import org.junit.jupiter.api.Test;
 
 class OperationGetTest {
 
-    private static final UUID KEY = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
+    private static final DocumentId DOCUMENT_ID = new DocumentId(1L);
 
     @Test
     void returnsTheLatestOperationSnapshot() {
         OperationManager manager = new OperationManager(
-                new MarkdownManager(snapshot -> { }, KEY, "# Root\nold\n"));
-        Operation created = manager.create(new SectionNodeRef(KEY, 1), "old", "new");
+                new MarkdownManager(snapshot -> { }, DOCUMENT_ID, "# Root\nold\n"));
+        Operation created = manager.create(new SectionNodeRef(DOCUMENT_ID, 1), "old", "new");
 
         Operation loaded = manager.get(created.getOpId());
 

@@ -2,28 +2,27 @@ package com.jacolp.agent.markdown;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import java.util.UUID;
-
+import com.jacolp.agent.markdown.model.DocumentId;
 import org.junit.jupiter.api.Test;
 
 class MarkdownHeadingTreeTest {
 
-    private static final UUID KEY = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
+    private static final DocumentId DOCUMENT_ID = new DocumentId(1L);
 
     @Test
     void rendersNumberedTreeWithLogicalIndentationAndOriginalHeadingSyntax() {
         String source = "# Java  ##\n\n### JDK\n\n## Tools\n\n# Python\n\n## 安装\n";
-        MarkdownManager manager = new MarkdownManager(snapshot -> { }, KEY, source);
+        MarkdownManager manager = new MarkdownManager(snapshot -> { }, DOCUMENT_ID, source);
 
         assertEquals(
                 "1. # Java  ##\n  2. ### JDK\n  3. ## Tools\n4. # Python\n  5. ## 安装",
-                manager.getHeadingTree(KEY));
+                manager.getHeadingTree(DOCUMENT_ID));
     }
 
     @Test
     void returnsAnEmptyTreeForAHeadinglessDocument() {
-        MarkdownManager manager = new MarkdownManager(snapshot -> { }, KEY, "plain text");
+        MarkdownManager manager = new MarkdownManager(snapshot -> { }, DOCUMENT_ID, "plain text");
 
-        assertEquals("", manager.getHeadingTree(KEY));
+        assertEquals("", manager.getHeadingTree(DOCUMENT_ID));
     }
 }

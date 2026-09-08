@@ -5,7 +5,6 @@ import java.util.Base64;
 import java.util.Objects;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantLock;
@@ -15,6 +14,7 @@ import com.jacolp.agent.markdown.exception.MarkdownCursorException;
 import com.jacolp.agent.markdown.exception.MarkdownPersistenceException;
 import com.jacolp.agent.markdown.exception.MarkdownReplacementException;
 import com.jacolp.agent.markdown.exception.SectionNotFoundException;
+import com.jacolp.agent.markdown.model.DocumentId;
 import com.jacolp.agent.markdown.model.MarkdownContext;
 import com.jacolp.agent.markdown.model.ReplaceResult;
 import com.jacolp.agent.markdown.model.SectionNode;
@@ -22,7 +22,7 @@ import com.jacolp.agent.markdown.model.SectionNodeRef;
 import com.jacolp.agent.markdown.model.SectionPage;
 
 /**
- * 与框架无关的 Markdown 上下文管理器，负责按 UUID 保存快照并提供查询、分页和替换能力。
+ * 与框架无关的 Markdown 上下文管理器，负责按 DocumentId 保存快照并提供查询、分页和替换能力。
  */
 public final class MarkdownManager {
 
@@ -36,9 +36,9 @@ public final class MarkdownManager {
 
     private final MarkdownAstParser parser = new MarkdownAstParser();
 
-    private final ConcurrentMap<UUID, MarkdownContext> contexts = new ConcurrentHashMap<>();
+    private final ConcurrentMap<DocumentId, MarkdownContext> contexts = new ConcurrentHashMap<>();
 
-    private final ConcurrentMap<UUID, ReentrantLock> replacementLocks = new ConcurrentHashMap<>();
+    private final ConcurrentMap<DocumentId, ReentrantLock> replacementLocks = new ConcurrentHashMap<>();
 
     /**
      * 创建一个尚未注册 Markdown 上下文的管理器。
@@ -53,41 +53,41 @@ public final class MarkdownManager {
      * 创建管理器并立即注册一个初始 Markdown 快照。
      *
      * @param store 替换操作使用的持久化边界
-     * @param key 上下文 UUID
+     * @param documentId 已持久化文档的标识
      * @param source 完整 Markdown 原文
      */
-    public MarkdownManager(MarkdownStore store, UUID key, String source) {
+    public MarkdownManager(MarkdownStore store, DocumentId documentId, String source) {
         this(store);
-        register(key, source);
+        register(documentId, source);
     }
 
     /**
-     * 解析 Markdown 原文，并发布指定 UUID 的当前不可变快照。
+     * 解析 Markdown 原文，并发布指定 DocumentId 的当前不可变快照。
      *
-     * @param key 上下文 UUID
+     * @param documentId 已持久化文档的标识
      * @param source 完整 Markdown 原文
      * @return 新发布的不可变上下文
      */
-    public MarkdownContext register(UUID key, String source) {
+    public MarkdownContext register(DocumentId documentId, String source) {
         // 先完整解析新 source，再一次性替换旧快照，避免上下文处于半解析状态。
-        MarkdownContext context = this.parser.parse(key, source);
-        this.contexts.put(key, context);
+        MarkdownContext context = this.parser.parse(documentId, source);
+        this.contexts.put(documentId, context);
         return context;
     }
 
     /**
-     * 获取 UUID 对应的当前不可变快照。
+     * 获取 DocumentId 对应的当前不可变快照。
      *
-     * @param key 上下文 UUID
+     * @param documentId 已持久化文档的标识
      * @return 当前不可变上下文
-     * @throws MarkdownContextNotFoundException UUID 未注册时抛出
+     * @throws MarkdownContextNotFoundException DocumentId 未注册时抛出
      */
-    public MarkdownContext getEntity(UUID key) {
-        Objects.requireNonNull(key, "key cannot be null");
-        MarkdownContext context = this.contexts.get(key);
+    public MarkdownContext getEntity(DocumentId documentId) {
+        Objects.requireNonNull(documentId, "documentId cannot be null");
+        MarkdownContext context = this.contexts.get(documentId);
         if (context == null) {
-            // 不返回 null，调用方需要明确知道该 UUID 没有可用上下文。
-            throw new MarkdownContextNotFoundException(key);
+            // 不返回 null，调用方需要明确知道该 DocumentId 没有可用上下文。
+            throw new MarkdownContextNotFoundException(documentId);
         }
         return context;
     }
@@ -95,11 +95,11 @@ public final class MarkdownManager {
     /**
      * 按原文顺序输出带编号和层级缩进的标题树。
      *
-     * @param key 上下文 UUID
+     * @param documentId 已持久化文档的标识
      * @return 每行一个标题，缩进表示逻辑树深度
      */
-    public String getHeadingTree(UUID key) {
-        MarkdownContext context = getEntity(key);
+    public String getHeadingTree(DocumentId documentId) {
+        MarkdownContext context = getEntity(documentId);
         StringBuilder result = new StringBuilder();
         Set<Integer> rendered = new HashSet<>();
         // 从所有根节点开始递归，保持多个一级标题在原文中的顺序。
@@ -112,12 +112,12 @@ public final class MarkdownManager {
     /**
      * 返回指定节点的直属正文和直属子标题摘要。
      *
-     * @param key 上下文 UUID
+     * @param documentId 已持久化文档的标识
      * @param nodeNumber 按原文顺序分配的节点编号
      * @return 带动态省略号的节点预览文本
      */
-    public String getSectionPreview(UUID key, int nodeNumber) {
-        MarkdownContext context = getEntity(key);
+    public String getSectionPreview(DocumentId documentId, int nodeNumber) {
+        MarkdownContext context = getEntity(documentId);
         SectionNode node = requireNode(context, nodeNumber);
         String source = context.getSource();
         StringBuilder result = new StringBuilder();
@@ -144,12 +144,12 @@ public final class MarkdownManager {
     /**
      * 返回指定节点完整章节的第一页文本。
      *
-     * @param key 上下文 UUID
+     * @param documentId 已持久化文档的标识
      * @param nodeNumber 按原文顺序分配的节点编号
      * @return 第一页文本；仍有后续字节时追加动态省略号
      */
-    public String getSectionAll(UUID key, int nodeNumber) {
-        MarkdownContext context = getEntity(key);
+    public String getSectionAll(DocumentId documentId, int nodeNumber) {
+        MarkdownContext context = getEntity(documentId);
         SectionNode node = requireNode(context, nodeNumber);
         // 无 cursor 时从章节起点读取，并由 readPage 按 UTF-8 字节限制截断。
         PageSlice page = readPage(context, node, 0);
@@ -159,13 +159,13 @@ public final class MarkdownManager {
     /**
      * 返回指定节点完整章节的一页字节受限文本。
      *
-     * @param key 上下文 UUID
+     * @param documentId 已持久化文档的标识
      * @param nodeNumber 按原文顺序分配的节点编号
      * @param cursor 上一页返回的不透明 cursor；{@code null} 表示第一页
      * @return 当前页文本及下一页 cursor 信息
      */
-    public SectionPage getSectionAll(UUID key, int nodeNumber, String cursor) {
-        MarkdownContext context = getEntity(key);
+    public SectionPage getSectionAll(DocumentId documentId, int nodeNumber, String cursor) {
+        MarkdownContext context = getEntity(documentId);
         SectionNode node = requireNode(context, nodeNumber);
         int byteOffset = 0;
         if (cursor != null) {
@@ -174,8 +174,8 @@ public final class MarkdownManager {
                 throw new MarkdownCursorException("cursor must not be blank");
             }
             SectionCursor decoded = decodeCursor(cursor);
-            if (!key.equals(decoded.key()) || nodeNumber != decoded.nodeNumber()) {
-                // cursor 绑定 UUID 和节点编号，不能跨上下文或跨节点复用。
+            if (!documentId.equals(decoded.documentId()) || nodeNumber != decoded.nodeNumber()) {
+                // cursor 绑定 DocumentId 和节点编号，不能跨上下文或跨节点复用。
                 throw new MarkdownCursorException("cursor does not match the requested section");
             }
             byteOffset = decoded.byteOffset();
@@ -185,7 +185,7 @@ public final class MarkdownManager {
         PageSlice page = readPage(context, node, byteOffset);
         String content = page.content() + (page.hasMore() ? "..." : "");
         String nextCursor = page.hasMore()
-                ? encodeCursor(key, nodeNumber, page.nextOffset())
+                ? encodeCursor(documentId, nodeNumber, page.nextOffset())
                 : null;
         return new SectionPage(content, page.hasMore(), nextCursor);
     }
@@ -193,11 +193,11 @@ public final class MarkdownManager {
     /**
      * 无损还原当前快照保存的完整 Markdown 原文。
      *
-     * @param key 上下文 UUID
+     * @param documentId 已持久化文档的标识
      * @return 完整 Markdown 原文，不分页、不截断且不重新渲染
      */
-    public String restoreMarkdown(UUID key) {
-        return getEntity(key).getSource();
+    public String restoreMarkdown(DocumentId documentId) {
+        return getEntity(documentId).getSource();
     }
 
     /**
@@ -217,12 +217,12 @@ public final class MarkdownManager {
             throw new MarkdownReplacementException("originalText must not be empty");
         }
 
-        UUID key = section.getKey();
-        // 同一 UUID 的替换串行执行，避免两个请求基于同一旧快照互相覆盖。
-        ReentrantLock lock = this.replacementLocks.computeIfAbsent(key, ignored -> new ReentrantLock());
+        DocumentId documentId = section.getDocumentId();
+        // 同一 DocumentId 的替换串行执行，避免两个请求基于同一旧快照互相覆盖。
+        ReentrantLock lock = this.replacementLocks.computeIfAbsent(documentId, ignored -> new ReentrantLock());
         lock.lock();
         try {
-            MarkdownContext current = getEntity(key);
+            MarkdownContext current = getEntity(documentId);
             SectionNode node = requireNode(current, section.getNodeNumber());
             String source = current.getSource();
             // 只截取当前节点的直属正文，子节点正文不会被本次替换命中。
@@ -234,7 +234,7 @@ public final class MarkdownManager {
                     + newText
                     + source.substring(absoluteMatchEnd);
             // 替换后重新解析完整文档，使标题编号、source span 和 revision 全部同步更新。
-            MarkdownContext updated = this.parser.parse(key, updatedSource);
+            MarkdownContext updated = this.parser.parse(documentId, updatedSource);
 
             try {
                 // 先持久化新快照，成功后才对内存上下文发布，保证失败时旧快照仍可读。
@@ -243,13 +243,13 @@ public final class MarkdownManager {
             catch (RuntimeException exception) {
                 // 持久化异常转换为领域异常；此时 contexts 仍保留旧版本。
                 throw new MarkdownPersistenceException(
-                        "Unable to persist Markdown replacement: " + key, exception);
+                        "Unable to persist Markdown replacement: " + documentId, exception);
             }
-            this.contexts.put(key, updated);
+            this.contexts.put(documentId, updated);
             return new ReplaceResult(updated);
         }
         finally {
-            // 无论成功还是失败都释放 UUID 锁，避免后续替换永久阻塞。
+            // 无论成功还是失败都释放 DocumentId 锁，避免后续替换永久阻塞。
             lock.unlock();
         }
     }
@@ -258,7 +258,7 @@ public final class MarkdownManager {
         SectionNode node = context.getNodes().get(nodeNumber);
         if (node == null) {
             // 节点编号不属于当前快照时，统一转换为明确的领域异常。
-            throw new SectionNotFoundException(context.getKey(), nodeNumber);
+            throw new SectionNotFoundException(context.getDocumentId(), nodeNumber);
         }
         return node;
     }
@@ -323,33 +323,33 @@ public final class MarkdownManager {
         return (bytes[offset] & 0xC0) != 0x80;
     }
 
-    private static String encodeCursor(UUID key, int nodeNumber, int byteOffset) {
-        // cursor 内含 UUID、节点编号和下一页实际字节偏移，再做 URL-safe Base64 编码。
-        String value = key + ":" + nodeNumber + ":" + byteOffset;
+    private static String encodeCursor(DocumentId documentId, int nodeNumber, int byteOffset) {
+        // cursor 内含十进制 DocumentId、节点编号和下一页实际字节偏移，再做 URL-safe Base64 编码。
+        String value = documentId.value() + ":" + nodeNumber + ":" + byteOffset;
         return Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 
     private static SectionCursor decodeCursor(String cursor) {
         try {
-            // 先解码 cursor，再校验字段数量、UUID 格式和非负范围。
+            // 先解码 cursor，再校验字段数量、DocumentId 格式和非负范围。
             String value = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
             String[] fields = value.split(":", -1);
             if (fields.length != 3) {
-                // 三个字段分别表示上下文 UUID、节点编号和字节偏移。
+                // 三个字段分别表示 DocumentId、节点编号和字节偏移。
                 throw new IllegalArgumentException("cursor must contain three fields");
             }
-            UUID key = UUID.fromString(fields[0]);
+            DocumentId documentId = new DocumentId(Long.parseLong(fields[0]));
             int nodeNumber = Integer.parseInt(fields[1]);
             int byteOffset = Integer.parseInt(fields[2]);
             if (nodeNumber <= 0 || byteOffset < 0) {
                 // 节点编号必须为正，字节偏移只能从零开始向后移动。
                 throw new IllegalArgumentException("cursor fields are out of range");
             }
-            return new SectionCursor(key, nodeNumber, byteOffset);
+            return new SectionCursor(documentId, nodeNumber, byteOffset);
         }
         catch (IllegalArgumentException exception) {
-            // Base64、UUID 或数字解析失败都统一报告为非法 cursor。
+            // Base64、DocumentId 或数字解析失败都统一报告为非法 cursor。
             throw new MarkdownCursorException("cursor is malformed", exception);
         }
     }
@@ -390,7 +390,7 @@ public final class MarkdownManager {
     private record PageSlice(String content, int nextOffset, boolean hasMore) {
     }
 
-    private record SectionCursor(UUID key, int nodeNumber, int byteOffset) {
+    private record SectionCursor(DocumentId documentId, int nodeNumber, int byteOffset) {
     }
 
     private static void appendHeadingTree(
@@ -441,11 +441,11 @@ public final class MarkdownManager {
         return this.parser;
     }
 
-    ConcurrentMap<UUID, MarkdownContext> contexts() {
+    ConcurrentMap<DocumentId, MarkdownContext> contexts() {
         return this.contexts;
     }
 
-    ConcurrentMap<UUID, ReentrantLock> replacementLocks() {
+    ConcurrentMap<DocumentId, ReentrantLock> replacementLocks() {
         return this.replacementLocks;
     }
 }

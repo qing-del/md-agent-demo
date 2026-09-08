@@ -4,28 +4,28 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
-import java.util.UUID;
 
+import com.jacolp.agent.markdown.model.DocumentId;
 import org.junit.jupiter.api.Test;
 
 class MarkdownSectionAllTest {
 
-    private static final UUID KEY = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
+    private static final DocumentId DOCUMENT_ID = new DocumentId(1L);
 
     @Test
     void returnsTheCompleteSectionWhenItFitsInOnePage() {
         String source = "preamble\n\n# Root\nroot body\n\n## Child\nchild body\n\n# Sibling\nsibling\n";
-        MarkdownManager manager = new MarkdownManager(snapshot -> { }, KEY, source);
+        MarkdownManager manager = new MarkdownManager(snapshot -> { }, DOCUMENT_ID, source);
 
-        assertEquals("# Root\nroot body\n\n## Child\nchild body\n\n", manager.getSectionAll(KEY, 1));
+        assertEquals("# Root\nroot body\n\n## Child\nchild body\n\n", manager.getSectionAll(DOCUMENT_ID, 1));
     }
 
     @Test
     void truncatesTheFirstPageAtUtf8BoundaryAndAddsEllipsis() {
         String source = "# Root\n" + "字".repeat(3000) + "\n\n# Sibling\n";
-        MarkdownManager manager = new MarkdownManager(snapshot -> { }, KEY, source);
+        MarkdownManager manager = new MarkdownManager(snapshot -> { }, DOCUMENT_ID, source);
 
-        String page = manager.getSectionAll(KEY, 1);
+        String page = manager.getSectionAll(DOCUMENT_ID, 1);
 
         assertTrue(page.endsWith("..."));
         assertTrue(page.getBytes(StandardCharsets.UTF_8).length <= 5120);

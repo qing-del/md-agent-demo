@@ -10,8 +10,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 
+import com.jacolp.agent.markdown.model.DocumentId;
 import com.jacolp.agent.markdown.model.MarkdownContext;
 import com.jacolp.agent.markdown.model.SectionNode;
 import org.commonmark.node.Code;
@@ -35,12 +35,12 @@ final class MarkdownAstParser {
     /**
      * 解析指定 source，并生成包含标题树、位置索引和 revision 的上下文快照。
      *
-     * @param key 上下文 UUID
+     * @param documentId 已持久化文档的标识
      * @param source 完整 Markdown 原文
      * @return 解析后的不可变上下文
      */
-    MarkdownContext parse(UUID key, String source) {
-        Objects.requireNonNull(key, "key cannot be null");
+    MarkdownContext parse(DocumentId documentId, String source) {
+        Objects.requireNonNull(documentId, "documentId cannot be null");
         Objects.requireNonNull(source, "source cannot be null");
 
         // 先构建带位置索引的 AST，再从文档第一层提取真正的标题节点。
@@ -101,7 +101,7 @@ final class MarkdownAstParser {
         }
 
         // 节点树和 source 共同组成当前 revision 的不可变快照。
-        return new MarkdownContext(key, revisionOf(source), source, rootNodeIds, nodes);
+        return new MarkdownContext(documentId, revisionOf(source), source, rootNodeIds, nodes);
     }
 
     private static List<HeadingCandidate> topLevelHeadings(Node document, String source) {

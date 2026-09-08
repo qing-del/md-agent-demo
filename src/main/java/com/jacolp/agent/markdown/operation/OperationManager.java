@@ -47,8 +47,8 @@ public final class OperationManager {
         }
 
         // 创建提案前确认节点仍存在，尽早拒绝过期的章节引用。
-        if (!this.markdownManager.getEntity(section.getKey()).getNodes().containsKey(section.getNodeNumber())) {
-            throw new SectionNotFoundException(section.getKey(), section.getNodeNumber());
+        if (!this.markdownManager.getEntity(section.getDocumentId()).getNodes().containsKey(section.getNodeNumber())) {
+            throw new SectionNotFoundException(section.getDocumentId(), section.getNodeNumber());
         }
 
         UUID opId = UUID.randomUUID();

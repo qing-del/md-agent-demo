@@ -11,7 +11,7 @@ public interface MarkdownStore {
     /**
      * 持久化一个新生成的 Markdown 快照。
      *
-     * <p>应用层适配器负责将上下文 UUID 映射到已有文档记录。</p>
+     * <p>应用层适配器负责将上下文 DocumentId 映射到已有文档记录。</p>
      *
      * @param context 待持久化的快照
      */
