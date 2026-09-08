@@ -7,12 +7,14 @@ import java.util.Locale;
 import java.util.Optional;
 
 import com.jacolp.mapper.MdDocumentMapper;
+import com.jacolp.agent.markdown.MarkdownContextProvider;
 import com.jacolp.pojo.dto.MdDocumentDTO;
 import com.jacolp.pojo.entity.MdDocument;
 import com.jacolp.pojo.vo.MdDocumentSummaryVO;
 import com.jacolp.pojo.vo.MdDocumentVO;
 import com.jacolp.service.MdDocumentService;
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
@@ -27,13 +29,27 @@ public class MdDocumentServiceImpl implements MdDocumentService {
 
     private final MdDocumentMapper mapper;
 
+    private final MarkdownContextProvider contextProvider;
+
     /**
      * 创建 Markdown 文档服务。
      *
      * @param mapper Markdown 文档数据库访问对象
      */
     public MdDocumentServiceImpl(MdDocumentMapper mapper) {
+        this(mapper, null);
+    }
+
+    /**
+     * 创建 Markdown 文档服务并绑定上下文刷新器。
+     *
+     * @param mapper Markdown 文档数据库访问对象
+     * @param contextProvider Markdown 上下文提供器
+     */
+    @Autowired
+    public MdDocumentServiceImpl(MdDocumentMapper mapper, MarkdownContextProvider contextProvider) {
         this.mapper = mapper;
+        this.contextProvider = contextProvider;
     }
 
     /**
@@ -68,9 +84,13 @@ public class MdDocumentServiceImpl implements MdDocumentService {
             MdDocument document = toEntity(documentDTO);
             mapper.upsert(document);
             // 写入后重新查询，确保返回值包含数据库生成的 ID 和时间字段。
-            return MdDocumentVO.from(Optional.ofNullable(mapper.selectByFileName(fileName))
+            MdDocument saved = Optional.ofNullable(mapper.selectByFileName(fileName))
                     .orElseThrow(() -> new IllegalStateException(
-                            "document was not saved: " + fileName)));
+                            "document was not saved: " + fileName));
+            if (this.contextProvider != null) {
+                this.contextProvider.refresh(saved);
+            }
+            return MdDocumentVO.from(saved);
         } catch (IOException exception) {
             // 文件读取失败属于请求输入无法处理，转换为客户端可识别的 400 响应。
             throw new ResponseStatusException(
@@ -114,6 +134,9 @@ public class MdDocumentServiceImpl implements MdDocumentService {
         // 受影响行数为 0 表示目标文档不存在，避免把删除请求误报为成功。
         if (mapper.deleteById(id) == 0) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "document not found: " + id);
+        }
+        if (this.contextProvider != null) {
+            this.contextProvider.remove(id);
         }
     }
 
