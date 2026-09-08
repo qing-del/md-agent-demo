@@ -49,6 +49,22 @@ public final class OperationManager {
         return state.snapshot();
     }
 
+    /**
+     * Gets the latest immutable snapshot for an operation.
+     *
+     * @param opId operation UUID
+     * @return current operation snapshot
+     * @throws OperationNotFoundException when the operation is unknown
+     */
+    public Operation get(UUID opId) {
+        Objects.requireNonNull(opId, "opId cannot be null");
+        OperationState state = this.operations.get(opId);
+        if (state == null) {
+            throw new OperationNotFoundException(opId);
+        }
+        return state.snapshot();
+    }
+
     MarkdownManager markdownManager() {
         return this.markdownManager;
     }
