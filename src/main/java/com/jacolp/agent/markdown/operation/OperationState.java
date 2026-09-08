@@ -36,6 +36,18 @@ final class OperationState {
         return this.status.get();
     }
 
+    SectionNodeRef section() {
+        return this.section;
+    }
+
+    String originalText() {
+        return this.originalText;
+    }
+
+    String newText() {
+        return this.newText;
+    }
+
     Operation snapshot() {
         return new Operation(this.opId, this.section, this.originalText, this.newText, this.status());
     }

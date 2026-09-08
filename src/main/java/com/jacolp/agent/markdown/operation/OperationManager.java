@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentMap;
 import com.jacolp.agent.markdown.MarkdownManager;
 import com.jacolp.agent.markdown.exception.MarkdownReplacementException;
 import com.jacolp.agent.markdown.exception.SectionNotFoundException;
+import com.jacolp.agent.markdown.model.ReplaceResult;
 import com.jacolp.agent.markdown.model.SectionNodeRef;
 
 /**
@@ -63,6 +64,36 @@ public final class OperationManager {
             throw new OperationNotFoundException(opId);
         }
         return state.snapshot();
+    }
+
+    /**
+     * Atomically confirms and executes one pending replacement proposal.
+     *
+     * @param opId operation UUID
+     * @return replacement result containing the new Markdown snapshot
+     * @throws OperationNotFoundException when the operation is unknown
+     * @throws OperationStateException when it has already left PENDING
+     */
+    public ReplaceResult confirm(UUID opId) {
+        Objects.requireNonNull(opId, "opId cannot be null");
+        OperationState state = this.operations.get(opId);
+        if (state == null) {
+            throw new OperationNotFoundException(opId);
+        }
+        if (!state.transition(OperationStatus.PENDING, OperationStatus.EXECUTING)) {
+            throw new OperationStateException(opId, state.status(), "confirmed");
+        }
+
+        try {
+            ReplaceResult result = this.markdownManager.replace(
+                    state.section(), state.originalText(), state.newText());
+            state.transition(OperationStatus.EXECUTING, OperationStatus.COMPLETED);
+            return result;
+        }
+        catch (RuntimeException exception) {
+            state.transition(OperationStatus.EXECUTING, OperationStatus.FAILED);
+            throw exception;
+        }
     }
 
     MarkdownManager markdownManager() {
