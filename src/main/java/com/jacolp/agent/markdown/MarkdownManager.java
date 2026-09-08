@@ -1,6 +1,7 @@
 package com.jacolp.agent.markdown;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Objects;
 import java.util.HashSet;
 import java.util.Set;
@@ -10,9 +11,11 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 import com.jacolp.agent.markdown.exception.MarkdownContextNotFoundException;
+import com.jacolp.agent.markdown.exception.MarkdownCursorException;
 import com.jacolp.agent.markdown.exception.SectionNotFoundException;
 import com.jacolp.agent.markdown.model.MarkdownContext;
 import com.jacolp.agent.markdown.model.SectionNode;
+import com.jacolp.agent.markdown.model.SectionPage;
 
 /**
  * Framework-neutral manager for UUID-keyed Markdown contexts.
@@ -139,6 +142,37 @@ public final class MarkdownManager {
         return page.content() + (page.hasMore() ? "..." : "");
     }
 
+    /**
+     * Returns one byte-bounded page of a node's complete section.
+     *
+     * @param key context UUID
+     * @param nodeNumber source-order node number
+     * @param cursor opaque cursor returned by the previous page, or {@code null} for page zero
+     * @return page content and continuation metadata
+     */
+    public SectionPage getSectionAll(UUID key, int nodeNumber, String cursor) {
+        MarkdownContext context = getEntity(key);
+        SectionNode node = requireNode(context, nodeNumber);
+        int byteOffset = 0;
+        if (cursor != null) {
+            if (cursor.isBlank()) {
+                throw new MarkdownCursorException("cursor must not be blank");
+            }
+            SectionCursor decoded = decodeCursor(cursor);
+            if (!key.equals(decoded.key()) || nodeNumber != decoded.nodeNumber()) {
+                throw new MarkdownCursorException("cursor does not match the requested section");
+            }
+            byteOffset = decoded.byteOffset();
+        }
+
+        PageSlice page = readPage(context, node, byteOffset);
+        String content = page.content() + (page.hasMore() ? "..." : "");
+        String nextCursor = page.hasMore()
+                ? encodeCursor(key, nodeNumber, page.nextOffset())
+                : null;
+        return new SectionPage(content, page.hasMore(), nextCursor);
+    }
+
     private static SectionNode requireNode(MarkdownContext context, int nodeNumber) {
         SectionNode node = context.getNodes().get(nodeNumber);
         if (node == null) {
@@ -161,7 +195,10 @@ public final class MarkdownManager {
         String section = context.getSource().substring(node.getHeadingStart(), node.getSectionEnd());
         byte[] bytes = section.getBytes(StandardCharsets.UTF_8);
         if (byteOffset < 0 || byteOffset > bytes.length) {
-            throw new IllegalArgumentException("section byte offset is out of bounds");
+            throw new MarkdownCursorException("section byte offset is out of bounds");
+        }
+        if (!isUtf8Boundary(bytes, byteOffset)) {
+            throw new MarkdownCursorException("section byte offset is not a UTF-8 boundary");
         }
 
         int remaining = bytes.length - byteOffset;
@@ -172,6 +209,39 @@ public final class MarkdownManager {
         boolean hasMore = end < bytes.length;
         String content = new String(bytes, byteOffset, end - byteOffset, StandardCharsets.UTF_8);
         return new PageSlice(content, end, hasMore);
+    }
+
+    private static boolean isUtf8Boundary(byte[] bytes, int offset) {
+        if (offset == 0 || offset == bytes.length) {
+            return true;
+        }
+        return (bytes[offset] & 0xC0) != 0x80;
+    }
+
+    private static String encodeCursor(UUID key, int nodeNumber, int byteOffset) {
+        String value = key + ":" + nodeNumber + ":" + byteOffset;
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static SectionCursor decodeCursor(String cursor) {
+        try {
+            String value = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
+            String[] fields = value.split(":", -1);
+            if (fields.length != 3) {
+                throw new IllegalArgumentException("cursor must contain three fields");
+            }
+            UUID key = UUID.fromString(fields[0]);
+            int nodeNumber = Integer.parseInt(fields[1]);
+            int byteOffset = Integer.parseInt(fields[2]);
+            if (nodeNumber <= 0 || byteOffset < 0) {
+                throw new IllegalArgumentException("cursor fields are out of range");
+            }
+            return new SectionCursor(key, nodeNumber, byteOffset);
+        }
+        catch (IllegalArgumentException exception) {
+            throw new MarkdownCursorException("cursor is malformed", exception);
+        }
     }
 
     private static int utf8Boundary(byte[] bytes, int start, int budget) {
@@ -202,6 +272,9 @@ public final class MarkdownManager {
     }
 
     private record PageSlice(String content, int nextOffset, boolean hasMore) {
+    }
+
+    private record SectionCursor(UUID key, int nodeNumber, int byteOffset) {
     }
 
     private static void appendHeadingTree(
