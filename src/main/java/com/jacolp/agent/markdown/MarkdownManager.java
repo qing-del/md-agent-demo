@@ -12,9 +12,13 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import com.jacolp.agent.markdown.exception.MarkdownContextNotFoundException;
 import com.jacolp.agent.markdown.exception.MarkdownCursorException;
+import com.jacolp.agent.markdown.exception.MarkdownPersistenceException;
+import com.jacolp.agent.markdown.exception.MarkdownReplacementException;
 import com.jacolp.agent.markdown.exception.SectionNotFoundException;
 import com.jacolp.agent.markdown.model.MarkdownContext;
+import com.jacolp.agent.markdown.model.ReplaceResult;
 import com.jacolp.agent.markdown.model.SectionNode;
+import com.jacolp.agent.markdown.model.SectionNodeRef;
 import com.jacolp.agent.markdown.model.SectionPage;
 
 /**
@@ -183,6 +187,53 @@ public final class MarkdownManager {
         return getEntity(key).getSource();
     }
 
+    /**
+     * Replaces one unique occurrence in a section's direct body and publishes a new snapshot.
+     *
+     * @param section target context and node
+     * @param originalText non-empty exact text to replace
+     * @param newText replacement text; an empty value deletes the match
+     * @return replacement result containing the newly published context
+     */
+    public ReplaceResult replace(SectionNodeRef section, String originalText, String newText) {
+        Objects.requireNonNull(section, "section cannot be null");
+        Objects.requireNonNull(originalText, "originalText cannot be null");
+        Objects.requireNonNull(newText, "newText cannot be null");
+        if (originalText.isEmpty()) {
+            throw new MarkdownReplacementException("originalText must not be empty");
+        }
+
+        UUID key = section.getKey();
+        ReentrantLock lock = this.replacementLocks.computeIfAbsent(key, ignored -> new ReentrantLock());
+        lock.lock();
+        try {
+            MarkdownContext current = getEntity(key);
+            SectionNode node = requireNode(current, section.getNodeNumber());
+            String source = current.getSource();
+            String directBody = source.substring(node.getBodyStart(), node.getDirectEnd());
+            int matchStart = uniqueMatchStart(directBody, originalText);
+            int absoluteMatchStart = node.getBodyStart() + matchStart;
+            int absoluteMatchEnd = absoluteMatchStart + originalText.length();
+            String updatedSource = source.substring(0, absoluteMatchStart)
+                    + newText
+                    + source.substring(absoluteMatchEnd);
+            MarkdownContext updated = this.parser.parse(key, updatedSource);
+
+            try {
+                this.store.save(updated);
+            }
+            catch (RuntimeException exception) {
+                throw new MarkdownPersistenceException(
+                        "Unable to persist Markdown replacement: " + key, exception);
+            }
+            this.contexts.put(key, updated);
+            return new ReplaceResult(updated);
+        }
+        finally {
+            lock.unlock();
+        }
+    }
+
     private static SectionNode requireNode(MarkdownContext context, int nodeNumber) {
         SectionNode node = context.getNodes().get(nodeNumber);
         if (node == null) {
@@ -194,6 +245,18 @@ public final class MarkdownManager {
     private static boolean hasExpandableContent(MarkdownContext context, SectionNode node) {
         return !context.getSource().substring(node.getBodyStart(), node.getDirectEnd()).isBlank()
                 || !node.getChildren().isEmpty();
+    }
+
+    private static int uniqueMatchStart(String directBody, String originalText) {
+        int firstMatch = directBody.indexOf(originalText);
+        if (firstMatch < 0) {
+            throw new MarkdownReplacementException("originalText was not found in the direct body");
+        }
+        int secondMatch = directBody.indexOf(originalText, firstMatch + 1);
+        if (secondMatch >= 0) {
+            throw new MarkdownReplacementException("originalText matched more than once in the direct body");
+        }
+        return firstMatch;
     }
 
     private static boolean endsWithLineBreak(StringBuilder value) {
