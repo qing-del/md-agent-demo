@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 import com.jacolp.agent.markdown.exception.MarkdownContextNotFoundException;
+import com.jacolp.agent.markdown.exception.SectionNotFoundException;
 import com.jacolp.agent.markdown.model.MarkdownContext;
 import com.jacolp.agent.markdown.model.SectionNode;
 
@@ -89,6 +90,52 @@ public final class MarkdownManager {
             appendHeadingTree(context, rootNodeId, 0, result, rendered);
         }
         return result.toString();
+    }
+
+    /**
+     * Returns a node's direct body and a collapsed list of its direct children.
+     *
+     * @param key context UUID
+     * @param nodeNumber source-order node number
+     * @return preview text with dynamic child ellipses
+     */
+    public String getSectionPreview(UUID key, int nodeNumber) {
+        MarkdownContext context = getEntity(key);
+        SectionNode node = requireNode(context, nodeNumber);
+        String source = context.getSource();
+        StringBuilder result = new StringBuilder();
+        result.append(rawHeading(context, node));
+        result.append(source, node.getBodyStart(), node.getDirectEnd());
+
+        for (Integer childNumber : node.getChildren()) {
+            SectionNode child = requireNode(context, childNumber);
+            if (result.length() > 0 && !endsWithLineBreak(result)) {
+                result.append('\n');
+            }
+            result.append(rawHeading(context, child));
+            if (hasExpandableContent(context, child)) {
+                result.append(" ...");
+            }
+        }
+        return result.toString();
+    }
+
+    private static SectionNode requireNode(MarkdownContext context, int nodeNumber) {
+        SectionNode node = context.getNodes().get(nodeNumber);
+        if (node == null) {
+            throw new SectionNotFoundException(context.getKey(), nodeNumber);
+        }
+        return node;
+    }
+
+    private static boolean hasExpandableContent(MarkdownContext context, SectionNode node) {
+        return !context.getSource().substring(node.getBodyStart(), node.getDirectEnd()).isBlank()
+                || !node.getChildren().isEmpty();
+    }
+
+    private static boolean endsWithLineBreak(StringBuilder value) {
+        int length = value.length();
+        return length > 0 && (value.charAt(length - 1) == '\n' || value.charAt(length - 1) == '\r');
     }
 
     private static void appendHeadingTree(
