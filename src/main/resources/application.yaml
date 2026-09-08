@@ -25,3 +25,7 @@ chat:
 
 server:
   port: ${SERVER_PORT:8080}
+
+logging:
+  level:
+    com.jacolp.agent.audit: INFO

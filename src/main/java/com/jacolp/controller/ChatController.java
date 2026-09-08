@@ -2,6 +2,7 @@ package com.jacolp.controller;
 
 import java.util.UUID;
 
+import com.jacolp.agent.audit.AuditContext;
 import com.jacolp.agent.context.ChatContextManager;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
@@ -53,14 +54,17 @@ public class ChatController {
         }
 
         String conversationId = canonicalSessionKey(request.sessionKey());
-        // 整个模型调用期间持有会话锁，避免同一会话的用户消息和 AI 回复交叉写入历史。
-        String content = this.chatContextManager.withConversationLock(conversationId, () -> this.chatClient.prompt()
-                .advisors(advisorSpec -> advisorSpec.param(ChatMemory.CONVERSATION_ID, conversationId))
-                .user(request.message())
-                .call()
-                .content());
+        try (AuditContext.Scope ignored = AuditContext.open(conversationId)) {
+            // 整个模型调用期间持有会话锁，避免同一会话的用户消息和 AI 回复交叉写入历史。
+            String content = this.chatContextManager.withConversationLock(conversationId,
+                    () -> this.chatClient.prompt()
+                            .advisors(advisorSpec -> advisorSpec.param(ChatMemory.CONVERSATION_ID, conversationId))
+                            .user(request.message())
+                            .call()
+                            .content());
 
-        return new ChatResponse(content);
+            return new ChatResponse(content);
+        }
     }
 
     /**
