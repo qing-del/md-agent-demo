@@ -45,6 +45,9 @@ class MarkdownModelTest {
     @Test
     void sectionPageRequiresCursorOnlyWhenMoreContentExists() {
         assertEquals("body", new SectionPage("body", false, null).getContent());
+        SectionPage continuation = new SectionPage("body...", true, "cursor");
+        assertEquals(true, continuation.isHasMore());
+        assertEquals("cursor", continuation.getNextCursor());
         assertThrows(IllegalArgumentException.class, () -> new SectionPage("body", false, "cursor"));
         assertThrows(IllegalArgumentException.class, () -> new SectionPage("body", true, null));
     }

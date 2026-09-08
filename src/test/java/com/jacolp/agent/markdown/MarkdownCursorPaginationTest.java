@@ -25,16 +25,17 @@ class MarkdownCursorPaginationTest {
 
         SectionPage page = manager.getSectionAll(DOCUMENT_ID, 1, null);
         while (true) {
+            boolean hasNext = page.getNextCursor() != null;
+            assertEquals(hasNext, page.isHasMore());
             String content = page.getContent();
-            if (page.isHasMore()) {
+            if (hasNext) {
                 assertTrue(content.endsWith("..."));
                 content = content.substring(0, content.length() - 3);
             }
             actual.append(content);
-            if (!page.isHasMore()) {
+            if (!hasNext) {
                 break;
             }
-            assertTrue(page.getNextCursor() != null);
             page = manager.getSectionAll(DOCUMENT_ID, 1, page.getNextCursor());
         }
 
@@ -60,6 +61,7 @@ class MarkdownCursorPaginationTest {
 
         SectionPage firstPage = manager.getSectionAll(DOCUMENT_ID, 1, null);
 
+        assertTrue(firstPage.getNextCursor() != null);
         assertTrue(firstPage.isHasMore());
         assertThrows(MarkdownCursorException.class,
                 () -> manager.getSectionAll(otherDocumentId, 1, firstPage.getNextCursor()));

@@ -4,6 +4,9 @@ import java.util.Objects;
 
 /**
  * 章节的一页字节受限内容及其续页信息。
+ *
+ * <p>{@code nextCursor} 是判断是否还有后续内容的权威标志：为空表示当前页是最后一页，
+ * 非空表示可以继续读取。{@code hasMore} 为兼容保留，并始终与该标志一致。</p>
  */
 public final class SectionPage {
 
@@ -17,8 +20,8 @@ public final class SectionPage {
      * 创建分页结果。
      *
      * @param content 当前页文本
-     * @param hasMore 是否仍有后续内容
-     * @param nextCursor 下一页 cursor；没有后续内容时必须为 {@code null}
+     * @param hasMore 是否仍有后续内容，必须与 {@code nextCursor != null} 一致
+     * @param nextCursor 下一页 cursor；{@code null} 表示没有后续内容，非 {@code null} 表示可以继续读取
      */
     public SectionPage(String content, boolean hasMore, String nextCursor) {
         this.content = Objects.requireNonNull(content, "content cannot be null");
@@ -46,7 +49,7 @@ public final class SectionPage {
     /**
      * 判断是否存在后续页。
      *
-     * @return 存在后续内容时为 {@code true}
+     * @return 与 {@code getNextCursor() != null} 等价的后续内容标志
      */
     public boolean isHasMore() {
         return this.hasMore;

@@ -180,11 +180,13 @@ public final class MarkdownManager {
 
         // 读取实际字节区间，只有确实还有内容时才生成下一页 cursor。
         PageSlice page = readPage(context, node, byteOffset);
-        String content = page.content() + (page.hasMore() ? "..." : "");
         String nextCursor = page.hasMore()
                 ? encodeCursor(documentId, nodeNumber, page.nextOffset())
                 : null;
-        return new SectionPage(content, page.hasMore(), nextCursor);
+        // 对外以 nextCursor 是否存在作为续读依据，hasMore 仅保持兼容且与其同步。
+        boolean hasMore = nextCursor != null;
+        String content = page.content() + (hasMore ? "..." : "");
+        return new SectionPage(content, hasMore, nextCursor);
     }
 
     /**
