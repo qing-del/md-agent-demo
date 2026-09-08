@@ -173,6 +173,16 @@ public final class MarkdownManager {
         return new SectionPage(content, page.hasMore(), nextCursor);
     }
 
+    /**
+     * Restores the complete source of the current snapshot without rendering.
+     *
+     * @param key context UUID
+     * @return complete original Markdown source
+     */
+    public String restoreMarkdown(UUID key) {
+        return getEntity(key).getSource();
+    }
+
     private static SectionNode requireNode(MarkdownContext context, int nodeNumber) {
         SectionNode node = context.getNodes().get(nodeNumber);
         if (node == null) {
