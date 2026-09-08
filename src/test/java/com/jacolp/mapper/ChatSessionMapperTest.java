@@ -18,7 +18,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 @SpringBootTest
-@TestPropertySource(properties = "spring.ai.openai.api-key=test-key")
+@TestPropertySource(properties = "QWEN_API_KEY=test-key")
 class ChatSessionMapperTest {
 
     @Autowired

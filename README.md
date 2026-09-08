@@ -1,15 +1,18 @@
 # md-agent
 
-一个最小的 Spring AI 后端 demo，当前提供 OpenAI Chat 接口。
+一个最小的 Spring AI 后端 demo，当前通过 OpenAI 兼容格式调用通义千问 Chat 接口。
 
 ## 启动
 
 ```bash
-export OPENAI_API_KEY=your-api-key
+export QWEN_API_KEY=your-api-key
 mvn spring-boot:run
 ```
 
-也可以通过 `OPENAI_MODEL` 覆盖模型，默认是 `gpt-4o-mini`。
+当前固定使用以下模型配置：
+
+- BaseURL：`https://dashscope.aliyuncs.com/compatible-mode/v1`
+- 模型：`qwen3.8-flash`
 
 ## 调用
 
