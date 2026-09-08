@@ -6,6 +6,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import com.jacolp.agent.markdown.MarkdownManager;
+import com.jacolp.agent.markdown.exception.MarkdownReplacementException;
+import com.jacolp.agent.markdown.exception.SectionNotFoundException;
+import com.jacolp.agent.markdown.model.SectionNodeRef;
 
 /**
  * In-memory manager for Markdown replacement proposals awaiting confirmation.
@@ -18,6 +21,32 @@ public final class OperationManager {
 
     public OperationManager(MarkdownManager markdownManager) {
         this.markdownManager = Objects.requireNonNull(markdownManager, "markdownManager cannot be null");
+    }
+
+    /**
+     * Creates a pending replacement proposal.
+     *
+     * @param section target context and node
+     * @param originalText exact text proposed for replacement
+     * @param newText replacement text; an empty value is allowed
+     * @return pending operation snapshot
+     */
+    public Operation create(SectionNodeRef section, String originalText, String newText) {
+        Objects.requireNonNull(section, "section cannot be null");
+        Objects.requireNonNull(originalText, "originalText cannot be null");
+        Objects.requireNonNull(newText, "newText cannot be null");
+        if (originalText.isEmpty()) {
+            throw new MarkdownReplacementException("originalText must not be empty");
+        }
+
+        if (!this.markdownManager.getEntity(section.getKey()).getNodes().containsKey(section.getNodeNumber())) {
+            throw new SectionNotFoundException(section.getKey(), section.getNodeNumber());
+        }
+
+        UUID opId = UUID.randomUUID();
+        OperationState state = new OperationState(opId, section, originalText, newText);
+        this.operations.put(opId, state);
+        return state.snapshot();
     }
 
     MarkdownManager markdownManager() {
