@@ -1,5 +1,6 @@
 package com.jacolp.agent.markdown;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.HashSet;
 import java.util.Set;
@@ -17,6 +18,10 @@ import com.jacolp.agent.markdown.model.SectionNode;
  * Framework-neutral manager for UUID-keyed Markdown contexts.
  */
 public final class MarkdownManager {
+
+    private static final int PAGE_BYTE_LIMIT = 5120;
+
+    private static final int ELLIPSIS_BYTE_LENGTH = 3;
 
     private final MarkdownStore store;
 
@@ -120,6 +125,20 @@ public final class MarkdownManager {
         return result.toString();
     }
 
+    /**
+     * Returns the first page of a node's complete section.
+     *
+     * @param key context UUID
+     * @param nodeNumber source-order node number
+     * @return first page, including a dynamic ellipsis when more bytes remain
+     */
+    public String getSectionAll(UUID key, int nodeNumber) {
+        MarkdownContext context = getEntity(key);
+        SectionNode node = requireNode(context, nodeNumber);
+        PageSlice page = readPage(context, node, 0);
+        return page.content() + (page.hasMore() ? "..." : "");
+    }
+
     private static SectionNode requireNode(MarkdownContext context, int nodeNumber) {
         SectionNode node = context.getNodes().get(nodeNumber);
         if (node == null) {
@@ -136,6 +155,53 @@ public final class MarkdownManager {
     private static boolean endsWithLineBreak(StringBuilder value) {
         int length = value.length();
         return length > 0 && (value.charAt(length - 1) == '\n' || value.charAt(length - 1) == '\r');
+    }
+
+    private static PageSlice readPage(MarkdownContext context, SectionNode node, int byteOffset) {
+        String section = context.getSource().substring(node.getHeadingStart(), node.getSectionEnd());
+        byte[] bytes = section.getBytes(StandardCharsets.UTF_8);
+        if (byteOffset < 0 || byteOffset > bytes.length) {
+            throw new IllegalArgumentException("section byte offset is out of bounds");
+        }
+
+        int remaining = bytes.length - byteOffset;
+        int originalBudget = remaining > PAGE_BYTE_LIMIT
+                ? PAGE_BYTE_LIMIT - ELLIPSIS_BYTE_LENGTH
+                : PAGE_BYTE_LIMIT;
+        int end = utf8Boundary(bytes, byteOffset, originalBudget);
+        boolean hasMore = end < bytes.length;
+        String content = new String(bytes, byteOffset, end - byteOffset, StandardCharsets.UTF_8);
+        return new PageSlice(content, end, hasMore);
+    }
+
+    private static int utf8Boundary(byte[] bytes, int start, int budget) {
+        int limit = Math.min(bytes.length, start + budget);
+        int cursor = start;
+        while (cursor < limit) {
+            int width = utf8CharacterWidth(bytes[cursor]);
+            if (cursor + width > limit) {
+                break;
+            }
+            cursor += width;
+        }
+        return cursor;
+    }
+
+    private static int utf8CharacterWidth(byte value) {
+        int unsigned = value & 0xFF;
+        if ((unsigned & 0x80) == 0) {
+            return 1;
+        }
+        if ((unsigned & 0xE0) == 0xC0) {
+            return 2;
+        }
+        if ((unsigned & 0xF0) == 0xE0) {
+            return 3;
+        }
+        return 4;
+    }
+
+    private record PageSlice(String content, int nextOffset, boolean hasMore) {
     }
 
     private static void appendHeadingTree(
