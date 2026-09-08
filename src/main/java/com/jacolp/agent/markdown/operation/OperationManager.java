@@ -96,6 +96,26 @@ public final class OperationManager {
         }
     }
 
+    /**
+     * Cancels a pending operation without changing Markdown content.
+     *
+     * @param opId operation UUID
+     * @return cancelled operation snapshot
+     * @throws OperationNotFoundException when the operation is unknown
+     * @throws OperationStateException when it has already left PENDING
+     */
+    public Operation cancel(UUID opId) {
+        Objects.requireNonNull(opId, "opId cannot be null");
+        OperationState state = this.operations.get(opId);
+        if (state == null) {
+            throw new OperationNotFoundException(opId);
+        }
+        if (!state.transition(OperationStatus.PENDING, OperationStatus.CANCELLED)) {
+            throw new OperationStateException(opId, state.status(), "cancelled");
+        }
+        return state.snapshot();
+    }
+
     MarkdownManager markdownManager() {
         return this.markdownManager;
     }
