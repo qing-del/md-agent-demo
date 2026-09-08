@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.jacolp.agent.markdown.model.SectionNodeRef;
 
 /**
- * Mutable internal operation state with atomic lifecycle transitions.
+ * 使用原子生命周期转换的内部可变操作状态。
  */
 final class OperationState {
 
@@ -21,6 +21,9 @@ final class OperationState {
 
     private final AtomicReference<OperationStatus> status = new AtomicReference<>(OperationStatus.PENDING);
 
+    /**
+     * 创建初始状态为 {@link OperationStatus#PENDING} 的内部操作。
+     */
     OperationState(UUID opId, SectionNodeRef section, String originalText, String newText) {
         this.opId = Objects.requireNonNull(opId, "opId cannot be null");
         this.section = Objects.requireNonNull(section, "section cannot be null");
@@ -29,10 +32,12 @@ final class OperationState {
     }
 
     boolean transition(OperationStatus expected, OperationStatus replacement) {
+        // compareAndSet 确保同一个 OpId 只有一个请求能成功推进状态。
         return this.status.compareAndSet(expected, replacement);
     }
 
     OperationStatus status() {
+        // 读取原子状态，供查询和失败分支生成最新操作快照。
         return this.status.get();
     }
 
@@ -49,6 +54,7 @@ final class OperationState {
     }
 
     Operation snapshot() {
+        // 对外只返回不可变副本，隐藏内部 AtomicReference 和状态写入能力。
         return new Operation(this.opId, this.section, this.originalText, this.newText, this.status());
     }
 }

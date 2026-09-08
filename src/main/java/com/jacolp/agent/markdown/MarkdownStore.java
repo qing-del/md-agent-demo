@@ -3,18 +3,17 @@ package com.jacolp.agent.markdown;
 import com.jacolp.agent.markdown.model.MarkdownContext;
 
 /**
- * Persistence boundary used by the framework-neutral Markdown SDK.
+ * Markdown SDK 使用的持久化边界。
  */
 @FunctionalInterface
 public interface MarkdownStore {
 
     /**
-     * Persists a newly created Markdown snapshot.
+     * 持久化一个新生成的 Markdown 快照。
      *
-     * <p>The application adapter is responsible for resolving the context UUID to its
-     * existing document record.</p>
+     * <p>应用层适配器负责将上下文 UUID 映射到已有文档记录。</p>
      *
-     * @param context snapshot to persist
+     * @param context 待持久化的快照
      */
     void save(MarkdownContext context);
 }
