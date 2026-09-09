@@ -2,6 +2,7 @@ package com.jacolp.service;
 
 import java.util.List;
 
+import com.jacolp.pojo.vo.ChatSessionDetailVO;
 import com.jacolp.pojo.vo.ChatSessionSummaryVO;
 
 /**
@@ -16,4 +17,12 @@ public interface ChatSessionService {
      * @return 按最近更新时间倒序排列的会话摘要列表
      */
     List<ChatSessionSummaryVO> list(String title);
+
+    /**
+     * 查询指定会话的历史消息详情。
+     *
+     * @param sessionKey 前端生成的 UUID 会话标识
+     * @return 会话详情及可展示的历史消息
+     */
+    ChatSessionDetailVO getBySessionKey(String sessionKey);
 }

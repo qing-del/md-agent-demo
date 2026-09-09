@@ -1,8 +1,10 @@
 package com.jacolp.agent.context;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -116,6 +118,40 @@ public class ChatContextManager implements ChatMemory {
             // 以用户消息作为轮次起点，保证窗口从完整轮次边界开始。
             int firstMessage = firstMessageOfRecentRounds(conversation.messages);
             return List.copyOf(conversation.messages.subList(firstMessage, conversation.messages.size()));
+        }
+        finally {
+            conversation.lock.unlock();
+        }
+    }
+
+    /**
+     * 读取指定会话当前可展示的历史快照，但不会因会话不存在而创建新记录。
+     *
+     * <p>缓存命中时在会话锁内读取，保证正在进行的聊天请求不会被读取到中间状态；缓存未命中时只加载
+     * 数据库中已有的会话，并将其放入缓存供后续请求复用。</p>
+     *
+     * @param conversationId UUID 会话标识
+     * @return 已存在的会话快照；会话不存在时返回 {@link Optional#empty()}
+     * @throws IllegalArgumentException UUID 会话标识非法时抛出
+     */
+    public Optional<ChatSessionSnapshot> getExistingSnapshot(String conversationId) {
+        String canonicalConversationId = canonicalConversationId(conversationId);
+        ConversationState conversation = this.conversations.get(canonicalConversationId);
+        if (conversation == null) {
+            ChatSession session = this.chatSessionMapper.selectBySessionKey(canonicalConversationId);
+            if (session == null) {
+                return Optional.empty();
+            }
+
+            ConversationState loaded = ConversationState.from(
+                    session, this.objectMapper, canonicalConversationId);
+            ConversationState cached = this.conversations.putIfAbsent(canonicalConversationId, loaded);
+            conversation = cached == null ? loaded : cached;
+        }
+
+        conversation.lock.lock();
+        try {
+            return Optional.of(conversation.toHistorySnapshot());
         }
         finally {
             conversation.lock.unlock();
@@ -376,6 +412,27 @@ public class ChatContextManager implements ChatMemory {
     }
 
     /**
+     * 会话当前可返回给前端的历史快照。
+     *
+     * @param sessionKey UUID 会话标识
+     * @param title 会话标题
+     * @param messages 用户和助手消息
+     * @param createdAt 会话创建时间
+     * @param updatedAt 会话最后更新时间
+     */
+    public record ChatSessionSnapshot(
+            String sessionKey,
+            String title,
+            List<Message> messages,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt) {
+
+        public ChatSessionSnapshot {
+            messages = List.copyOf(messages);
+        }
+    }
+
+    /**
      * 单个聊天会话的内存状态及其并发控制信息。
      */
     private static final class ConversationState {
@@ -384,11 +441,15 @@ public class ChatContextManager implements ChatMemory {
 
         private final long sessionId;
 
+        private final LocalDateTime createdAt;
+
         private final ReentrantLock lock = new ReentrantLock();
 
         private final List<Message> messages;
 
         private String title;
+
+        private final LocalDateTime updatedAt;
 
         private String referencedFileContents;
 
@@ -404,17 +465,23 @@ public class ChatContextManager implements ChatMemory {
          * @param title 会话标题
          * @param messages 完整消息历史
          * @param referencedFileContents 文件引用 JSON 快照
+         * @param createdAt 会话创建时间
+         * @param updatedAt 会话最后更新时间
          */
         private ConversationState(
                 String conversationId,
                 long sessionId,
                 String title,
                 List<Message> messages,
-                String referencedFileContents) {
+                String referencedFileContents,
+                LocalDateTime createdAt,
+                LocalDateTime updatedAt) {
             this.conversationId = conversationId;
             this.sessionId = sessionId;
+            this.createdAt = createdAt;
             this.title = title;
             this.messages = new ArrayList<>(messages);
+            this.updatedAt = updatedAt;
             this.referencedFileContents = referencedFileContents;
         }
 
@@ -436,7 +503,9 @@ public class ChatContextManager implements ChatMemory {
                     session.getId(),
                     session.getTitle(),
                     readMessages(session.getMessages(), objectMapper, conversationId),
-                    normalizeReferences(session.getReferencedFileContents(), objectMapper, conversationId));
+                    normalizeReferences(session.getReferencedFileContents(), objectMapper, conversationId),
+                    session.getCreatedAt(),
+                    session.getUpdatedAt());
             // 应用升级或旧版本写入的快照可能超过新窗口，缓存命中前先按完整轮次裁剪。
             conversation.trimToRecentRounds(objectMapper);
             return conversation;
@@ -451,10 +520,22 @@ public class ChatContextManager implements ChatMemory {
         private ChatSession toSnapshot(ObjectMapper objectMapper) {
             ChatSession snapshot = new ChatSession();
             snapshot.setId(this.sessionId);
+            snapshot.setSessionKey(this.conversationId);
             snapshot.setTitle(this.title);
             snapshot.setMessages(writeMessages(this.messages, objectMapper));
             snapshot.setReferencedFileContents(this.referencedFileContents);
+            snapshot.setCreatedAt(this.createdAt);
+            snapshot.setUpdatedAt(this.updatedAt);
             return snapshot;
+        }
+
+        private ChatSessionSnapshot toHistorySnapshot() {
+            return new ChatSessionSnapshot(
+                    this.conversationId,
+                    this.title,
+                    List.copyOf(this.messages),
+                    this.createdAt,
+                    this.updatedAt);
         }
 
         /**

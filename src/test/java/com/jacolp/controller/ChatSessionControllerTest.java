@@ -9,6 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.LocalDateTime;
 import java.util.List;
 
+import com.jacolp.pojo.vo.ChatMessageVO;
+import com.jacolp.pojo.vo.ChatSessionDetailVO;
 import com.jacolp.pojo.vo.ChatSessionSummaryVO;
 import com.jacolp.service.ChatSessionService;
 import org.junit.jupiter.api.Test;
@@ -55,6 +57,50 @@ class ChatSessionControllerTest {
                 .andExpect(jsonPath("$").isEmpty());
 
         verify(service).list(null);
+    }
+
+    @Test
+    void getsSessionDetailForHistoryRestore() throws Exception {
+        ChatSessionDetailVO detail = new ChatSessionDetailVO(
+                "550e8400-e29b-41d4-a716-446655440000",
+                "Spring AI",
+                List.of(
+                        new ChatMessageVO("user", "请介绍一下 Spring AI"),
+                        new ChatMessageVO("assistant", "Spring AI 是一个用于构建 AI 应用的 Spring 项目。")),
+                LocalDateTime.of(2026, 9, 9, 12, 0),
+                LocalDateTime.of(2026, 9, 9, 12, 5));
+        when(service.getBySessionKey(detail.getSessionKey())).thenReturn(detail);
+
+        mockMvc().perform(get("/api/sessions/{sessionKey}", detail.getSessionKey()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sessionKey").value(detail.getSessionKey()))
+                .andExpect(jsonPath("$.title").value(detail.getTitle()))
+                .andExpect(jsonPath("$.messages[0].role").value("user"))
+                .andExpect(jsonPath("$.messages[0].content").value("请介绍一下 Spring AI"))
+                .andExpect(jsonPath("$.messages[1].role").value("assistant"))
+                .andExpect(jsonPath("$.createdAt").exists())
+                .andExpect(jsonPath("$.updatedAt").exists());
+
+        verify(service).getBySessionKey(detail.getSessionKey());
+    }
+
+    @Test
+    void returnsAnEmptyMessageArrayForAnEmptySession() throws Exception {
+        String sessionKey = "550e8400-e29b-41d4-a716-446655440000";
+        ChatSessionDetailVO detail = new ChatSessionDetailVO(
+                sessionKey,
+                null,
+                List.of(),
+                LocalDateTime.of(2026, 9, 9, 12, 0),
+                LocalDateTime.of(2026, 9, 9, 12, 0));
+        when(service.getBySessionKey(sessionKey)).thenReturn(detail);
+
+        mockMvc().perform(get("/api/sessions/{sessionKey}", sessionKey))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.messages").isEmpty())
+                .andExpect(jsonPath("$.title").doesNotExist());
+
+        verify(service).getBySessionKey(sessionKey);
     }
 
     private MockMvc mockMvc() {

@@ -2,9 +2,11 @@ package com.jacolp.controller;
 
 import java.util.List;
 
+import com.jacolp.pojo.vo.ChatSessionDetailVO;
 import com.jacolp.pojo.vo.ChatSessionSummaryVO;
 import com.jacolp.service.ChatSessionService;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,5 +39,16 @@ public class ChatSessionController {
     public List<ChatSessionSummaryVO> list(
             @RequestParam(value = "title", required = false) String title) {
         return this.service.list(title);
+    }
+
+    /**
+     * 查询指定会话的历史消息详情，供前端恢复聊天窗口。
+     *
+     * @param sessionKey 前端生成的 UUID 会话标识
+     * @return 会话详情及可展示的历史消息
+     */
+    @GetMapping("/{sessionKey}")
+    public ChatSessionDetailVO getBySessionKey(@PathVariable("sessionKey") String sessionKey) {
+        return this.service.getBySessionKey(sessionKey);
     }
 }

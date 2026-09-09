@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.Optional;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -226,6 +227,54 @@ class ChatContextManagerTest {
         ArgumentCaptor<ChatSession> sessionCaptor = ArgumentCaptor.forClass(ChatSession.class);
         verify(this.chatSessionMapper).insert(sessionCaptor.capture());
         assertEquals(SESSION_KEY, sessionCaptor.getValue().getSessionKey());
+    }
+
+    @Test
+    void existingSnapshotReturnsTheLatestInMemoryMessagesWithoutCreatingASession() {
+        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(13L, "[]", "[]"));
+        ChatContextManager manager = manager();
+
+        manager.add(SESSION_KEY, new UserMessage("latest question"));
+        manager.add(SESSION_KEY, new AssistantMessage("latest answer"));
+
+        Optional<ChatContextManager.ChatSessionSnapshot> snapshot = manager.getExistingSnapshot(SESSION_KEY);
+
+        assertEquals(true, snapshot.isPresent());
+        assertEquals(List.of("latest question", "latest answer"), snapshot.orElseThrow().messages().stream()
+                .map(Message::getText)
+                .toList());
+        verify(this.chatSessionMapper, times(1)).selectBySessionKey(SESSION_KEY);
+        verify(this.chatSessionMapper, never()).insert(any(ChatSession.class));
+    }
+
+    @Test
+    void existingSnapshotLoadsOnlyExistingSessionAndFiltersInternalMessages() {
+        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(
+                14L,
+                "[{\"role\":\"system\",\"content\":\"hidden system\"},"
+                        + "{\"role\":\"user\",\"content\":\"question\"},"
+                        + "{\"role\":\"tool\",\"content\":\"hidden tool\"},"
+                        + "{\"role\":\"assistant\",\"content\":\"answer\"}]",
+                "[]"));
+        ChatContextManager manager = manager();
+
+        ChatContextManager.ChatSessionSnapshot snapshot = manager.getExistingSnapshot(SESSION_KEY).orElseThrow();
+
+        assertEquals(List.of("question", "answer"), snapshot.messages().stream()
+                .map(Message::getText)
+                .toList());
+        verify(this.chatSessionMapper, never()).insert(any(ChatSession.class));
+    }
+
+    @Test
+    void existingSnapshotReturnsEmptyWithoutCreatingAnUnknownSession() {
+        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(null);
+        ChatContextManager manager = manager();
+
+        assertEquals(Optional.empty(), manager.getExistingSnapshot(SESSION_KEY));
+
+        verify(this.chatSessionMapper).selectBySessionKey(SESSION_KEY);
+        verify(this.chatSessionMapper, never()).insert(any(ChatSession.class));
     }
 
     private ChatContextManager manager() {
