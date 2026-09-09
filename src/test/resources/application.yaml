@@ -6,3 +6,10 @@ spring:
   sql:
     init:
       mode: never
+  ai:
+    openai:
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api-key: ${QWEN_API_KEY:test-key}
+      chat:
+        options:
+          model: qwen3.8-flash

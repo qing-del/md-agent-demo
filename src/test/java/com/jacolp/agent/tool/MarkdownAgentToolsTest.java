@@ -2,6 +2,7 @@ package com.jacolp.agent.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -92,6 +93,6 @@ class MarkdownAgentToolsTest {
         assertEquals(7L, proposal.getDocumentId());
         assertEquals(2, proposal.getNodeNumber());
         assertEquals(OperationStatus.PENDING, proposal.getStatus());
-        verify(this.operationManager).create(any(SectionNodeRef.class), "old", "new");
+        verify(this.operationManager).create(any(SectionNodeRef.class), eq("old"), eq("new"));
     }
 }
