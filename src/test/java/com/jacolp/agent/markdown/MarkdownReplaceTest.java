@@ -72,4 +72,14 @@ class MarkdownReplaceTest {
 
         assertEquals("# Root\n", manager.restoreMarkdown(DOCUMENT_ID));
     }
+
+    @Test
+    void emptyReplacementTextKeepsTheLineBreakWhenTheMatchIsInline() {
+        String source = "# Root\nkeep remove me\n";
+        MarkdownManager manager = new MarkdownManager(snapshot -> { }, DOCUMENT_ID, source);
+
+        manager.replace(new SectionNodeRef(DOCUMENT_ID, 1), "remove me", "");
+
+        assertEquals("# Root\nkeep \n", manager.restoreMarkdown(DOCUMENT_ID));
+    }
 }

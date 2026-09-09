@@ -162,6 +162,7 @@ public final class MarkdownManager {
         StringBuilder result = new StringBuilder();
         // 标题和直属正文保留 source 原文，避免摘要改变 Markdown 写法。
         result.append(rawHeading(context, node));
+        result.append(source, node.getHeadingStart() + rawHeading(context, node).length(), node.getBodyStart());
         result.append(source, node.getBodyStart(), node.getDirectEnd());
 
         // 只展开直属子标题；子标题自身仍以一行标题和省略标记表示。
@@ -268,6 +269,10 @@ public final class MarkdownManager {
             int matchStart = uniqueMatchStart(directBody, originalText);
             int absoluteMatchStart = node.getBodyStart() + matchStart;
             int absoluteMatchEnd = absoluteMatchStart + originalText.length();
+            if (newText.isEmpty()) {
+                // 删除直属正文中的完整一行时同时移除行尾换行，避免留下无意义的空行。
+                absoluteMatchEnd = endOfDeletedLine(source, absoluteMatchStart, absoluteMatchEnd);
+            }
             String updatedSource = source.substring(0, absoluteMatchStart)
                     + newText
                     + source.substring(absoluteMatchEnd);
@@ -319,6 +324,26 @@ public final class MarkdownManager {
             throw new MarkdownReplacementException("originalText matched more than once in the direct body");
         }
         return firstMatch;
+    }
+
+    private static int endOfDeletedLine(String source, int matchStart, int matchEnd) {
+        int lineStart = matchStart;
+        while (lineStart > 0
+                && source.charAt(lineStart - 1) != '\n'
+                && source.charAt(lineStart - 1) != '\r') {
+            lineStart--;
+        }
+        // 只有匹配从一行开头（允许前导空白）开始时才删除该行的换行。
+        if (!source.substring(lineStart, matchStart).isBlank()) {
+            return matchEnd;
+        }
+        if (matchEnd < source.length() && source.charAt(matchEnd) == '\r') {
+            return matchEnd + (matchEnd + 1 < source.length() && source.charAt(matchEnd + 1) == '\n' ? 2 : 1);
+        }
+        if (matchEnd < source.length() && source.charAt(matchEnd) == '\n') {
+            return matchEnd + 1;
+        }
+        return matchEnd;
     }
 
     private static boolean endsWithLineBreak(StringBuilder value) {
