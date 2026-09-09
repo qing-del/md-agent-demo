@@ -1,0 +1,94 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #eef2f6;
+  background: #0a1019;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.app-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 76% 4%, rgba(34, 211, 160, 0.08), transparent 28rem),
+    #0a1019;
+}
+
+.scaffold-shell {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.scaffold-card {
+  width: min(520px, 100%);
+  padding: 44px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 28px;
+  background: rgba(17, 24, 39, 0.86);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+}
+
+.brand-mark {
+  position: relative;
+  display: inline-grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  color: #071b16;
+  border-radius: 14px;
+  background: #7ee7bd;
+}
+
+.brand-spark {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+}
+
+.eyebrow {
+  margin: 28px 0 10px;
+  color: #7ee7bd;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+}
+
+h1 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: clamp(28px, 5vw, 42px);
+  letter-spacing: -0.04em;
+  line-height: 1.08;
+}
+
+.muted-copy {
+  margin: 18px 0 0;
+  color: #94a3b8;
+  line-height: 1.7;
+}
