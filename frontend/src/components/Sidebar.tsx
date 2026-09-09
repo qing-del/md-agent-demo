@@ -101,7 +101,6 @@ function Sidebar({
         <button className="new-session-button" type="button" onClick={onNewSession}>
           <Plus size={17} strokeWidth={2.4} />
           新建会话
-          <span className="shortcut-hint">⌘ N</span>
         </button>
 
         <section className="sidebar-section session-section" aria-labelledby="session-heading">

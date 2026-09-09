@@ -110,6 +110,7 @@ function App() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   const documentRequestRef = useRef(0)
+  const activeDocumentIdRef = useRef<number | null>(null)
   const sessionRequestRef = useRef(0)
   const initialHistoryAttemptedRef = useRef(false)
   const sessionSearchMountedRef = useRef(false)
@@ -119,6 +120,10 @@ function App() {
     () => mentionedDocumentIds(chatInput, documents),
     [chatInput, documents],
   )
+
+  useEffect(() => {
+    activeDocumentIdRef.current = activeDocumentId
+  }, [activeDocumentId])
 
   const showToast = useCallback((kind: ToastKind, message: string) => {
     setToast({ kind, message })
@@ -159,7 +164,8 @@ function App() {
       const nextId = preferredId && result.some((document) => document.id === preferredId)
         ? preferredId
         : result[0]?.id ?? null
-      if (activeDocumentId === null && nextId !== null) {
+      if (activeDocumentIdRef.current === null && nextId !== null) {
+        activeDocumentIdRef.current = nextId
         setActiveDocumentId(nextId)
         storeRecentDocumentId(nextId)
         void loadDocumentDetail(nextId)
@@ -169,7 +175,7 @@ function App() {
     } finally {
       setDocumentsLoading(false)
     }
-  }, [activeDocumentId, loadDocumentDetail])
+  }, [loadDocumentDetail])
 
   useEffect(() => {
     void refreshDocuments()
@@ -194,7 +200,7 @@ function App() {
         content: message.content,
       })))
     } catch (error) {
-      if (requestId === sessionRequestRef.current) setSessionsError(errorMessage(error))
+      if (requestId === sessionRequestRef.current) setChatError(`加载会话历史失败：${errorMessage(error)}`)
     } finally {
       if (requestId === sessionRequestRef.current) setSessionLoading(false)
     }
@@ -251,10 +257,15 @@ function App() {
       if (!proceed) return
     }
     setDocumentError(null)
+    activeDocumentIdRef.current = documentId
     setActiveDocumentId(documentId)
     storeRecentDocumentId(documentId)
     setMobileSidebarOpen(false)
-    if (drafts[documentId]) return
+    if (drafts[documentId]) {
+      documentRequestRef.current += 1
+      setDocumentLoading(false)
+      return
+    }
     void loadDocumentDetail(documentId)
   }, [activeDocumentId, activeDraft, drafts, loadDocumentDetail])
 
@@ -288,22 +299,26 @@ function App() {
     }))
     try {
       const response = await documentApi.saveDraft(documentId, content)
-      setDrafts((current) => ({
-        ...current,
-        [documentId]: {
-          ...current[documentId],
-          savedContent: content,
-          content,
-          fileSizeBytes: byteLength(content),
-          updatedAt: response.updatedAt,
-          syncStatus: 'synced',
-          syncError: undefined,
-        },
-      }))
+      setDrafts((current) => {
+        const existing = current[documentId]
+        const hasNewerEdits = Boolean(existing && existing.content !== content)
+        return {
+          ...current,
+          [documentId]: {
+            ...existing,
+            savedContent: content,
+            content: existing?.content ?? content,
+            fileSizeBytes: byteLength(existing?.content ?? content),
+            updatedAt: response.updatedAt,
+            syncStatus: hasNewerEdits ? 'dirty' : 'synced',
+            syncError: undefined,
+          },
+        }
+      })
       setDocuments((current) => current.map((document) => document.id === documentId
         ? { ...document, fileSizeBytes: byteLength(content), updatedAt: response.updatedAt }
         : document))
-      showToast('success', '草稿已同步到后端')
+      showToast('success', '草稿已同步到后端；如果期间有新改动，仍会保持未同步状态')
     } catch (error) {
       const message = errorMessage(error)
       setDrafts((current) => ({
@@ -327,13 +342,22 @@ function App() {
     try {
       const detail = await documentApi.upload(file)
       setDrafts((current) => ({ ...current, [detail.id]: makeDraft(detail) }))
+      activeDocumentIdRef.current = detail.id
       setActiveDocumentId(detail.id)
       storeRecentDocumentId(detail.id)
       setDocumentError(null)
-      const refreshed = await documentApi.list()
-      setDocuments(refreshed)
+      let listRefreshFailed = false
+      try {
+        const refreshed = await documentApi.list()
+        setDocuments(refreshed)
+      } catch {
+        listRefreshFailed = true
+        setDocuments((current) => [detail, ...current.filter((document) => document.id !== detail.id)])
+      }
       setMobileSidebarOpen(false)
-      showToast('success', `${detail.fileName} 已上传并打开`)
+      showToast(listRefreshFailed ? 'info' : 'success', listRefreshFailed
+        ? `${detail.fileName} 已上传并打开，文档列表稍后可重试刷新`
+        : `${detail.fileName} 已上传并打开`)
     } catch (error) {
       showToast('error', `上传失败：${errorMessage(error)}`)
     } finally {
@@ -362,6 +386,7 @@ function App() {
       setSelections((current) => current.filter((selection) => selection.documentId !== document.id))
       if (activeDocumentId === document.id) {
         const nextId = remaining[0]?.id ?? null
+        activeDocumentIdRef.current = nextId
         setActiveDocumentId(nextId)
         storeRecentDocumentId(nextId)
         setDocumentError(null)
