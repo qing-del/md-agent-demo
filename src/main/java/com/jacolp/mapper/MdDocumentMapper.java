@@ -87,7 +87,9 @@ public interface MdDocumentMapper {
      */
     @Update("""
             UPDATE md_documents
-            SET content = #{content}, file_size_bytes = #{fileSizeBytes}
+            SET content = #{content},
+                file_size_bytes = #{fileSizeBytes},
+                updated_at = CURRENT_TIMESTAMP(6)
             WHERE id = #{id}
             """)
     int updateContentById(

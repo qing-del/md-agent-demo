@@ -11,6 +11,7 @@ import com.jacolp.agent.markdown.MarkdownContextProvider;
 import com.jacolp.pojo.dto.MdDocumentDTO;
 import com.jacolp.pojo.entity.MdDocument;
 import com.jacolp.pojo.vo.MdDocumentSummaryVO;
+import com.jacolp.pojo.vo.MdDocumentSyncVO;
 import com.jacolp.pojo.vo.MdDocumentVO;
 import com.jacolp.service.MdDocumentService;
 import org.springframework.http.HttpStatus;
@@ -121,6 +122,49 @@ public class MdDocumentServiceImpl implements MdDocumentService {
         return MdDocumentVO.from(Optional.ofNullable(mapper.selectById(id))
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "document not found: " + id)));
+    }
+
+    /**
+     * 保存前端提交的完整 Markdown 草稿，并刷新后端 Markdown 上下文。
+     *
+     * @param id 文档 ID
+     * @param content 完整 Markdown 正文；允许为空字符串，但不能为 null
+     * @return 同步成功结果
+     * @throws ResponseStatusException 参数非法或文档不存在时抛出
+     */
+    @Override
+    public MdDocumentSyncVO syncContent(long id, String content) {
+        if (id <= 0) {
+            throw badRequest("document ID must be positive");
+        }
+        if (content == null) {
+            throw badRequest("content must be provided");
+        }
+
+        long fileSizeBytes = content.getBytes(StandardCharsets.UTF_8).length;
+        if (fileSizeBytes > MAX_FILE_SIZE_BYTES) {
+            throw badRequest("content is too large");
+        }
+
+        // 先确认目标存在；这样即使数据库将“无变化更新”返回 0，也不会误报文档不存在。
+        MdDocument existing = this.mapper.selectById(id);
+        if (existing == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "document not found: " + id);
+        }
+
+        this.mapper.updateContentById(id, content, fileSizeBytes);
+        MdDocument updated = this.mapper.selectById(id);
+        if (updated == null) {
+            throw new IllegalStateException("document disappeared after sync: " + id);
+        }
+        if (!content.equals(updated.getContent()) || updated.getFileSizeBytes() != fileSizeBytes) {
+            throw new IllegalStateException("document content was not synchronized: " + id);
+        }
+
+        if (this.contextProvider != null) {
+            this.contextProvider.refresh(updated);
+        }
+        return new MdDocumentSyncVO(id, "SYNCED", updated.getUpdatedAt());
     }
 
     /**

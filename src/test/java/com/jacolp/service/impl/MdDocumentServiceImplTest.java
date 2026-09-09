@@ -3,6 +3,7 @@ package com.jacolp.service.impl;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
@@ -10,8 +11,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import com.jacolp.mapper.MdDocumentMapper;
+import com.jacolp.agent.markdown.MarkdownContextProvider;
 import com.jacolp.pojo.entity.MdDocument;
 import com.jacolp.pojo.vo.MdDocumentSummaryVO;
+import com.jacolp.pojo.vo.MdDocumentSyncVO;
 import com.jacolp.pojo.vo.MdDocumentVO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,6 +30,9 @@ class MdDocumentServiceImplTest {
 
     @Mock
     private MdDocumentMapper mapper;
+
+    @Mock
+    private MarkdownContextProvider contextProvider;
 
     @Test
     void uploadReadsUtf8MarkdownAndUpsertsByOriginalFileName() throws Exception {
@@ -99,6 +105,62 @@ class MdDocumentServiceImplTest {
                 () -> new MdDocumentServiceImpl(mapper).getById(404L));
 
         assertEquals(404, exception.getStatusCode().value());
+    }
+
+    @Test
+    void syncContentUpdatesTheFullDraftAndRefreshesMarkdownContext() {
+        String content = "# Updated\n\n中文";
+        long fileSizeBytes = content.getBytes(StandardCharsets.UTF_8).length;
+        MdDocument existing = new MdDocument(7L, "guide.md", "# Old", 6L, null, null);
+        LocalDateTime updatedAt = LocalDateTime.of(2026, 9, 9, 12, 0);
+        MdDocument updated = new MdDocument(7L, "guide.md", content, fileSizeBytes, null, updatedAt);
+        when(this.mapper.selectById(7L)).thenReturn(existing, updated);
+        when(this.mapper.updateContentById(7L, content, fileSizeBytes)).thenReturn(1);
+
+        MdDocumentSyncVO actual = new MdDocumentServiceImpl(this.mapper, this.contextProvider)
+                .syncContent(7L, content);
+
+        assertEquals(7L, actual.getDocumentId());
+        assertEquals("SYNCED", actual.getStatus());
+        assertEquals(updatedAt, actual.getUpdatedAt());
+        verify(this.mapper).updateContentById(7L, content, fileSizeBytes);
+        verify(this.contextProvider).refresh(updated);
+    }
+
+    @Test
+    void syncContentAllowsAnEmptyMarkdownDocument() {
+        MdDocument existing = new MdDocument(8L, "empty.md", "old", 3L, null, null);
+        MdDocument updated = new MdDocument(8L, "empty.md", "", 0L, null, null);
+        when(this.mapper.selectById(8L)).thenReturn(existing, updated);
+        when(this.mapper.updateContentById(8L, "", 0L)).thenReturn(1);
+
+        MdDocumentSyncVO actual = new MdDocumentServiceImpl(this.mapper).syncContent(8L, "");
+
+        assertEquals(8L, actual.getDocumentId());
+        assertEquals("SYNCED", actual.getStatus());
+        verify(this.mapper).updateContentById(8L, "", 0L);
+    }
+
+    @Test
+    void syncContentRejectsMissingContentBeforeReadingTheDatabase() {
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> new MdDocumentServiceImpl(this.mapper).syncContent(7L, null));
+
+        assertEquals(400, exception.getStatusCode().value());
+        verifyNoInteractions(this.mapper);
+    }
+
+    @Test
+    void syncContentReturnsNotFoundWithoutUpdatingAnUnknownDocument() {
+        when(this.mapper.selectById(404L)).thenReturn(null);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> new MdDocumentServiceImpl(this.mapper).syncContent(404L, "# Missing"));
+
+        assertEquals(404, exception.getStatusCode().value());
+        verify(this.mapper).selectById(404L);
     }
 
     @Test

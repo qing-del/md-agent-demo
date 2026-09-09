@@ -2,18 +2,24 @@ package com.jacolp.controller;
 
 import java.util.List;
 
+import com.jacolp.pojo.dto.MdDocumentDraftDTO;
 import com.jacolp.pojo.vo.MdDocumentSummaryVO;
+import com.jacolp.pojo.vo.MdDocumentSyncVO;
 import com.jacolp.pojo.vo.MdDocumentVO;
 import com.jacolp.service.MdDocumentService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
@@ -64,6 +70,23 @@ public class MdDocumentController {
     @GetMapping("/{id}")
     public MdDocumentVO getById(@PathVariable("id") long id) {
         return service.getById(id);
+    }
+
+    /**
+     * 保存前端当前的完整 Markdown 草稿。
+     *
+     * @param documentId 文档 ID
+     * @param draft 草稿请求
+     * @return 同步结果
+     */
+    @PutMapping(path = "/{documentId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<MdDocumentSyncVO> syncDraft(
+            @PathVariable("documentId") long documentId,
+            @RequestBody MdDocumentDraftDTO draft) {
+        if (draft == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body must not be null");
+        }
+        return ResponseEntity.ok(service.syncContent(documentId, draft.getContent()));
     }
 
     /**

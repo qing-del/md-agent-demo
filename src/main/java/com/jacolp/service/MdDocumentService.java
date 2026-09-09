@@ -3,6 +3,7 @@ package com.jacolp.service;
 import java.util.List;
 
 import com.jacolp.pojo.vo.MdDocumentSummaryVO;
+import com.jacolp.pojo.vo.MdDocumentSyncVO;
 import com.jacolp.pojo.vo.MdDocumentVO;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -33,6 +34,15 @@ public interface MdDocumentService {
      * @return 文档详情
      */
     MdDocumentVO getById(long id);
+
+    /**
+     * 保存指定文档的完整 Markdown 草稿。
+     *
+     * @param id 文档 ID
+     * @param content 前端提交的完整 Markdown 正文
+     * @return 同步结果
+     */
+    MdDocumentSyncVO syncContent(long id, String content);
 
     /**
      * 删除指定文档。
