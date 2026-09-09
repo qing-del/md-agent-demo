@@ -190,6 +190,26 @@ class ChatContextManagerTest {
     }
 
     @Test
+    void excludesAssistantToolCallMessagesFromConversationHistory() throws Exception {
+        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(12L, "[]", "[]"));
+        when(this.chatSessionMapper.updateSnapshot(any(ChatSession.class))).thenReturn(1);
+        ChatContextManager manager = manager();
+
+        manager.add(SESSION_KEY, List.of(
+                new UserMessage("question"),
+                AssistantMessage.builder()
+                        .content("")
+                        .toolCalls(List.of(new AssistantMessage.ToolCall("call-1", "function", "lookup", "{}")))
+                        .build()));
+
+        assertEquals(1, manager.get(SESSION_KEY).size());
+        assertEquals(1, manager.flushDirtySessions(false));
+        ArgumentCaptor<ChatSession> snapshotCaptor = ArgumentCaptor.forClass(ChatSession.class);
+        verify(this.chatSessionMapper).updateSnapshot(snapshotCaptor.capture());
+        assertEquals(1, this.objectMapper.readTree(snapshotCaptor.getValue().getMessages()).size());
+    }
+
+    @Test
     void missingConversationCreatesANewSession() {
         when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(null);
         doAnswer(invocation -> {

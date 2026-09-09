@@ -673,10 +673,16 @@ public class ChatContextManager implements ChatMemory {
         }
 
         private static boolean isHistoryMessage(Message message) {
-            return message != null
-                    && message.getText() != null
-                    && (message.getMessageType() == MessageType.USER
-                            || message.getMessageType() == MessageType.ASSISTANT);
+            if (message == null || message.getText() == null) {
+                return false;
+            }
+            if (message.getMessageType() == MessageType.USER) {
+                return true;
+            }
+            // 模型为调用工具生成的 assistant 消息只属于当前请求，不是成功轮次的最终回答。
+            return message.getMessageType() == MessageType.ASSISTANT
+                    && (!(message instanceof AssistantMessage assistantMessage)
+                            || !assistantMessage.hasToolCalls());
         }
     }
 
