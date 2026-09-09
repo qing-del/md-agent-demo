@@ -125,6 +125,10 @@ function App() {
     activeDocumentIdRef.current = activeDocumentId
   }, [activeDocumentId])
 
+  useEffect(() => {
+    storeSessionKey(sessionKey)
+  }, [sessionKey])
+
   const showToast = useCallback((kind: ToastKind, message: string) => {
     setToast({ kind, message })
   }, [])
@@ -189,6 +193,7 @@ function App() {
     setSessionsError(null)
     setChatError(null)
     setMessages([])
+    setChatInput('')
     setReferencedDocumentIds([])
     setSelections([])
     try {
@@ -599,6 +604,7 @@ function App() {
           onUpload={handleUpload}
           onRetryDocuments={() => void refreshDocuments()}
           onRetrySessions={() => void refreshSessions(sessionSearch)}
+          onCloseSidebar={() => setMobileSidebarOpen(false)}
         />
         <EditorPanel
           document={activeDraft}

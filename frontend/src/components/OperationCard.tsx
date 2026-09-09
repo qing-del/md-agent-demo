@@ -7,6 +7,7 @@ interface OperationCardProps {
   status: OperationStatus
   error?: string
   busy: boolean
+  blocked: boolean
   onApply: () => void
   onIgnore: () => void
 }
@@ -17,6 +18,7 @@ function OperationCard({
   status,
   error,
   busy,
+  blocked,
   onApply,
   onIgnore,
 }: OperationCardProps) {
@@ -58,11 +60,11 @@ function OperationCard({
 
       {!isApplied && !isIgnored && (
         <div className="operation-actions">
-          <button className="operation-apply" type="button" disabled={busy} onClick={onApply}>
+          <button className="operation-apply" type="button" disabled={busy || blocked} onClick={onApply}>
             {busy ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />}
             {busy ? '正在定位…' : '应用到草稿'}
           </button>
-          <button className="operation-ignore" type="button" disabled={busy} onClick={onIgnore}>
+          <button className="operation-ignore" type="button" disabled={busy || blocked} onClick={onIgnore}>
             <X size={14} />忽略
           </button>
         </div>

@@ -145,6 +145,7 @@ function MessageBubble({
             <div className="operation-list-heading"><Sparkles size={14} />可应用的修改</div>
             {message.operations.map((operation) => {
               const status: OperationStatus = operationStatuses[operation.opId] ?? 'pending'
+              const operationKey = `${message.id}:${operation.opId}`
               return (
                 <OperationCard
                   key={operation.opId}
@@ -152,7 +153,8 @@ function MessageBubble({
                   documentName={documentLabel(operation.documentId, documents)}
                   status={status}
                   error={operationErrors[operation.opId]}
-                  busy={operationBusyKey === `${message.id}:${operation.opId}`}
+                  busy={operationBusyKey === operationKey}
+                  blocked={operationBusyKey !== null && operationBusyKey !== operationKey}
                   onApply={() => onApplyOperation(message.id, operation)}
                   onIgnore={() => onIgnoreOperation(message.id, operation.opId)}
                 />

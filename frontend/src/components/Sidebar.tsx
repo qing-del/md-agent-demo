@@ -36,6 +36,7 @@ interface SidebarProps {
   onUpload: (file: File) => void
   onRetryDocuments: () => void
   onRetrySessions: () => void
+  onCloseSidebar: () => void
 }
 
 function formatDate(value: string): string {
@@ -70,6 +71,7 @@ function Sidebar({
   onUpload,
   onRetryDocuments,
   onRetrySessions,
+  onCloseSidebar,
 }: SidebarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -92,7 +94,7 @@ function Sidebar({
             <p className="brand-caption">文档协作工作台</p>
           </div>
         </div>
-        <button className="icon-button sidebar-close" type="button" aria-label="关闭侧栏">
+        <button className="icon-button sidebar-close" type="button" aria-label="关闭侧栏" onClick={onCloseSidebar}>
           <X size={17} />
         </button>
       </div>
