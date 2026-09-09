@@ -105,4 +105,5 @@ export interface MarkdownHeading {
 
 export interface LocalOperationResult {
   content: string
+  usedSelectionFallback?: boolean
 }

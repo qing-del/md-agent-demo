@@ -519,7 +519,14 @@ function App() {
     setOperationBusyKey(busyKey)
     try {
       const draft = await ensureDraft(operation.documentId)
-      const result = applyLocalOperation(draft.content, operation)
+      const messageIndex = messages.findIndex((message) => message.id === messageId)
+      const sourceMessage = messageIndex < 0
+        ? undefined
+        : messages.slice(0, messageIndex).reverse().find((message) => message.role === 'user')
+      const fallbackSectionTexts = sourceMessage?.references?.selections
+        .filter((selection) => selection.documentId === operation.documentId)
+        .map((selection) => selection.sectionText) ?? []
+      const result = applyLocalOperation(draft.content, operation, fallbackSectionTexts)
       setDrafts((current) => {
         const existing = current[operation.documentId] ?? draft
         return {
@@ -544,7 +551,9 @@ function App() {
           }
         })()
         : message))
-      showToast('success', '提案已应用到本地草稿，请保存以同步')
+      showToast(result.usedSelectionFallback ? 'info' : 'success', result.usedSelectionFallback
+        ? '后端章节路径与本轮选区不一致，已按选区中的唯一原文应用到本地草稿，请保存以同步'
+        : '提案已应用到本地草稿，请保存以同步')
     } catch (error) {
       const message = errorMessage(error)
       setMessages((current) => current.map((item) => item.id === messageId
@@ -554,7 +563,7 @@ function App() {
     } finally {
       setOperationBusyKey(null)
     }
-  }, [ensureDraft, showToast])
+  }, [ensureDraft, messages, showToast])
 
   const handleIgnoreOperation = useCallback((messageId: string, opId: string) => {
     setMessages((current) => current.map((message) => message.id === messageId

@@ -132,9 +132,37 @@ function countMatches(source: string, needle: string): { count: number; first: n
   return { count, first }
 }
 
-export function applyLocalOperation(source: string, operation: ChatOperation): LocalOperationResult {
+function uniqueMatchInSection(source: string, headings: MarkdownHeading[], target: MarkdownHeading, originalText: string): number | null {
+  const bodyStart = target.after
+  const bodyEnd = directBodyEnd(source, headings, target)
+  const directBody = source.slice(bodyStart, bodyEnd)
+  const matches = countMatches(directBody, originalText)
+  if (matches.count === 0) return null
+  if (matches.count > 1) throw new Error('原文在章节直属正文中出现多次，已阻止替换')
+  return bodyStart + matches.first
+}
+
+function normalizedSectionPath(sectionText: string): string[] {
+  return sectionText.split('|').map(normalizePathPart).filter(Boolean)
+}
+
+function samePath(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((part, index) => part === right[index])
+}
+
+function replaceAt(source: string, start: number, originalText: string, newText: string): LocalOperationResult {
+  return {
+    content: `${source.slice(0, start)}${newText}${source.slice(start + originalText.length)}`,
+  }
+}
+
+export function applyLocalOperation(
+  source: string,
+  operation: ChatOperation,
+  fallbackSectionTexts: string[] = [],
+): LocalOperationResult {
   const headings = parseMarkdownHeadings(source)
-  const normalizedPath = operation.sectionText.split('|').map(normalizePathPart).filter(Boolean)
+  const normalizedPath = normalizedSectionPath(operation.sectionText)
 
   if (!normalizedPath.length) {
     throw new Error('提案缺少有效章节路径')
@@ -144,31 +172,47 @@ export function applyLocalOperation(source: string, operation: ChatOperation): L
     const matches = countMatches(source, operation.originalText)
     if (matches.count === 0) throw new Error('在正文中找不到原文')
     if (matches.count > 1) throw new Error('原文在正文中出现多次，已阻止替换')
-    return {
-      content: `${source.slice(0, matches.first)}${operation.newText}${source.slice(matches.first + operation.originalText.length)}`,
-    }
+    return replaceAt(source, matches.first, operation.originalText, operation.newText)
   }
 
   const candidates = headings.filter((heading) => {
-    const path = sectionPathForHeading(headings, heading).map(normalizePathPart)
-    return path.length === normalizedPath.length && path.every((part, index) => part === normalizedPath[index])
+    return samePath(sectionPathForHeading(headings, heading).map(normalizePathPart), normalizedPath)
   })
 
-  if (candidates.length === 0) throw new Error(`找不到章节“${operation.sectionText}”`)
+  const primaryError = candidates.length === 0
+    ? `找不到章节“${operation.sectionText}”`
+    : '在章节直属正文中找不到原文'
   if (candidates.length > 1) throw new Error(`章节“${operation.sectionText}”匹配到多个位置，已阻止替换`)
 
-  const target = candidates[0]
-  const bodyStart = target.after
-  const bodyEnd = directBodyEnd(source, headings, target)
-  const directBody = source.slice(bodyStart, bodyEnd)
-  const matches = countMatches(directBody, operation.originalText)
-  if (matches.count === 0) throw new Error('在章节直属正文中找不到原文')
-  if (matches.count > 1) throw new Error('原文在章节直属正文中出现多次，已阻止替换')
-
-  const absoluteStart = bodyStart + matches.first
-  return {
-    content: `${source.slice(0, absoluteStart)}${operation.newText}${source.slice(absoluteStart + operation.originalText.length)}`,
+  if (candidates.length === 1) {
+    const matchStart = uniqueMatchInSection(source, headings, candidates[0], operation.originalText)
+    if (matchStart !== null) return replaceAt(source, matchStart, operation.originalText, operation.newText)
   }
+
+  const fallbackPaths = [...new Set(fallbackSectionTexts.map(normalizedSectionPath)
+    .filter((path) => path.length > 0)
+    .map((path) => path.join(' | ')))]
+    .map((path) => path.split(' | '))
+  if (fallbackPaths.length === 0) throw new Error(primaryError)
+
+  const fallbackCandidates = headings.filter((heading) => {
+    const path = sectionPathForHeading(headings, heading).map(normalizePathPart)
+    return fallbackPaths.some((fallbackPath) => samePath(path, fallbackPath))
+  })
+  if (fallbackCandidates.length > 1) {
+    throw new Error('当前选区章节匹配到多个位置，已阻止替换')
+  }
+  if (fallbackCandidates.length === 1) {
+    const matchStart = uniqueMatchInSection(source, headings, fallbackCandidates[0], operation.originalText)
+    if (matchStart !== null) {
+      return {
+        ...replaceAt(source, matchStart, operation.originalText, operation.newText),
+        usedSelectionFallback: true,
+      }
+    }
+  }
+
+  throw new Error(primaryError)
 }
 
 export function formatBytes(bytes: number): string {
