@@ -23,6 +23,10 @@ chat:
   persistence:
     flush-interval-ms: 60000   # 聊天刷盘间隔时间
 
+agent:
+  audit:
+    log-dir: log
+
 server:
   port: ${SERVER_PORT:8080}
 
