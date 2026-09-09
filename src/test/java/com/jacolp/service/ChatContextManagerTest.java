@@ -3,6 +3,7 @@ package com.jacolp.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -13,6 +14,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jacolp.agent.context.ChatContextManager;
 import com.jacolp.mapper.ChatSessionMapper;
+import com.jacolp.pojo.dto.ChatMessageDTO;
+import com.jacolp.pojo.dto.SelectionDTO;
 import com.jacolp.pojo.entity.ChatSession;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -95,6 +98,49 @@ class ChatContextManagerTest {
         assertEquals("[]", snapshotCaptor.getValue().getMessages());
         assertEquals("[{\"fileName\":\"guide.md\"}]",
                 snapshotCaptor.getValue().getReferencedFileContents());
+    }
+
+    @Test
+    void appendsMultipleReferenceRecordsAndPreservesExistingReferences() throws Exception {
+        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(
+                8L,
+                "[]",
+                "[{\"fileName\":\"guide.md\"}]"));
+        when(this.chatSessionMapper.updateSnapshot(any(ChatSession.class))).thenReturn(1);
+        ChatContextManager manager = manager();
+
+        manager.appendReferenceMetadata(SESSION_KEY, new ChatMessageDTO(
+                "first",
+                List.of(1L, 2L),
+                List.of(new SelectionDTO(2L, "first selection", "# Guide"))));
+        manager.appendReferenceMetadata(SESSION_KEY, new ChatMessageDTO(
+                "second",
+                List.of(1L, 2L),
+                List.of(new SelectionDTO(2L, "first selection", "# Guide"))));
+
+        assertEquals(1, manager.flushDirtySessions(false));
+        ArgumentCaptor<ChatSession> snapshotCaptor = ArgumentCaptor.forClass(ChatSession.class);
+        verify(this.chatSessionMapper).updateSnapshot(snapshotCaptor.capture());
+        JsonNode references = this.objectMapper.readTree(snapshotCaptor.getValue().getReferencedFileContents());
+        assertEquals(3, references.size());
+        assertEquals("guide.md", references.get(0).get("fileName").asText());
+        assertEquals(List.of(1, 2), this.objectMapper.convertValue(
+                references.get(1).get("documentIds"), List.class));
+        assertEquals("first selection", references.get(1).get("selections").get(0)
+                .get("originalText").asText());
+        assertEquals(List.of(1, 2), this.objectMapper.convertValue(
+                references.get(2).get("documentIds"), List.class));
+    }
+
+    @Test
+    void emptyReferenceMetadataDoesNotMarkConversationDirty() {
+        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(9L, "[]", "[]"));
+        ChatContextManager manager = manager();
+
+        manager.appendReferenceMetadata(SESSION_KEY, new ChatMessageDTO("hello", List.of(), List.of()));
+
+        assertEquals(0, manager.flushDirtySessions(false));
+        verify(this.chatSessionMapper, never()).updateSnapshot(any(ChatSession.class));
     }
 
     @Test

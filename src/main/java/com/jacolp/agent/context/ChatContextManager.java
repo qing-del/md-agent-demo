@@ -11,8 +11,13 @@ import java.util.function.Supplier;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jacolp.mapper.ChatSessionMapper;
+import com.jacolp.pojo.dto.ChatMessageDTO;
+import com.jacolp.pojo.dto.SelectionDTO;
 import com.jacolp.pojo.entity.ChatSession;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -124,6 +129,38 @@ public class ChatContextManager implements ChatMemory {
         try {
             conversation.messages.clear();
             // 清空本身也需要持久化，否则数据库仍会保留清空前的消息历史。
+            conversation.dirty = true;
+        }
+        finally {
+            conversation.lock.unlock();
+        }
+    }
+
+    /**
+     * 将本轮聊天中的文档引用和选区追加到会话引用快照。
+     *
+     * <p>引用记录与消息历史使用同一个会话锁和 dirty 刷新机制，确保同一会话的并发请求不会互相覆盖。</p>
+     *
+     * @param conversationId UUID 会话标识
+     * @param message 结构化聊天消息
+     * @throws IllegalArgumentException UUID 会话标识非法时抛出
+     * @throws NullPointerException 消息为空时抛出
+     */
+    public void appendReferenceMetadata(String conversationId, ChatMessageDTO message) {
+        String canonicalConversationId = canonicalConversationId(conversationId);
+        Objects.requireNonNull(message, "message cannot be null");
+
+        List<Long> documentIds = message.getDocumentIds();
+        List<SelectionDTO> selections = message.getSelections();
+        if ((documentIds == null || documentIds.isEmpty())
+                && (selections == null || selections.isEmpty())) {
+            return;
+        }
+
+        ConversationState conversation = getOrLoad(canonicalConversationId);
+        conversation.lock.lock();
+        try {
+            conversation.appendReferenceMetadata(message, this.objectMapper);
             conversation.dirty = true;
         }
         finally {
@@ -360,6 +397,34 @@ public class ChatContextManager implements ChatMemory {
         }
 
         /**
+         * 将一条引用记录追加到当前会话的 JSON 数组快照。
+         *
+         * @param message 结构化聊天消息
+         * @param objectMapper 用于读写引用 JSON 的对象映射器
+         */
+        private void appendReferenceMetadata(ChatMessageDTO message, ObjectMapper objectMapper) {
+            ArrayNode references = readReferences(this.referencedFileContents, objectMapper, this.conversationId);
+            ObjectNode reference = objectMapper.createObjectNode();
+            List<Long> documentIds = message.getDocumentIds() == null
+                    ? List.of()
+                    : message.getDocumentIds();
+            List<SelectionDTO> selections = message.getSelections() == null
+                    ? List.of()
+                    : message.getSelections();
+            reference.set("documentIds", objectMapper.valueToTree(documentIds));
+            reference.set("selections", objectMapper.valueToTree(selections));
+            references.add(reference);
+
+            try {
+                this.referencedFileContents = objectMapper.writeValueAsString(references);
+            }
+            catch (JsonProcessingException exception) {
+                throw new IllegalStateException(
+                        "Unable to serialize chat session references: " + this.conversationId, exception);
+            }
+        }
+
+        /**
          * 解析数据库中的消息 JSON。
          *
          * @param messagesJson 消息 JSON 文本
@@ -404,6 +469,32 @@ public class ChatContextManager implements ChatMemory {
             }
             catch (JsonProcessingException exception) {
                 throw new IllegalStateException("Unable to serialize chat session messages", exception);
+            }
+        }
+
+        /**
+         * 解析数据库中的引用 JSON 数组。
+         *
+         * @param referencesJson 引用 JSON 文本
+         * @param objectMapper 用于反序列化的对象映射器
+         * @param conversationId 出错时用于日志和异常信息的 UUID 会话标识
+         * @return 可追加的引用数组
+         */
+        private static ArrayNode readReferences(
+                String referencesJson,
+                ObjectMapper objectMapper,
+                String conversationId) {
+            String json = referencesJson == null ? "[]" : referencesJson;
+            try {
+                JsonNode references = objectMapper.readTree(json);
+                if (references == null || !references.isArray()) {
+                    throw new IllegalArgumentException("stored references must be a JSON array");
+                }
+                return (ArrayNode) references;
+            }
+            catch (JsonProcessingException | IllegalArgumentException exception) {
+                throw new IllegalStateException(
+                        "Unable to read references for chat session: " + conversationId, exception);
             }
         }
 
