@@ -2,6 +2,8 @@ package com.jacolp.agent.markdown.operation;
 
 import java.util.Objects;
 import java.util.UUID;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -19,6 +21,8 @@ public final class OperationManager {
     private final MarkdownManager markdownManager;
 
     private final ConcurrentMap<UUID, OperationState> operations = new ConcurrentHashMap<>();
+
+    private final ThreadLocal<CaptureState> currentCapture = new ThreadLocal<>();
 
     /**
      * 创建操作管理器并绑定 Markdown 管理器。
@@ -54,7 +58,37 @@ public final class OperationManager {
         UUID opId = UUID.randomUUID();
         OperationState state = new OperationState(opId, section, originalText, newText);
         this.operations.put(opId, state);
+        CaptureState capture = this.currentCapture.get();
+        if (capture != null) {
+            capture.operationIds.add(opId);
+        }
         return state.snapshot();
+    }
+
+    /**
+     * 开启一次请求级操作捕获范围。
+     *
+     * <p>捕获范围只收集当前线程在范围内创建的提案，避免并发聊天请求相互污染响应。</p>
+     *
+     * @return 请求操作捕获范围
+     */
+    public RequestScope capture() {
+        CaptureState previous = this.currentCapture.get();
+        CaptureState current = new CaptureState();
+        this.currentCapture.set(current);
+        return new RequestScope(current, previous);
+    }
+
+    /**
+     * 将内部操作转换为聊天响应需要的标题路径。
+     *
+     * @param operation 操作快照
+     * @return 操作对应的 sectionText
+     */
+    public String sectionText(Operation operation) {
+        Objects.requireNonNull(operation, "operation cannot be null");
+        return this.markdownManager.getSectionText(
+                operation.getSection().getDocumentId(), operation.getSection().getNodeNumber());
     }
 
     /**
@@ -137,5 +171,83 @@ public final class OperationManager {
 
     ConcurrentMap<UUID, OperationState> operations() {
         return this.operations;
+    }
+
+    private void discard(List<UUID> operationIds) {
+        operationIds.forEach(this.operations::remove);
+    }
+
+    private static final class CaptureState {
+
+        private final List<UUID> operationIds = new ArrayList<>();
+    }
+
+    /**
+     * 管理一次聊天请求中新建的操作提案。
+     */
+    public final class RequestScope implements AutoCloseable {
+
+        private final CaptureState state;
+
+        private final CaptureState previous;
+
+        private boolean finished;
+
+        private RequestScope(CaptureState state, CaptureState previous) {
+            this.state = state;
+            this.previous = previous;
+        }
+
+        /**
+         * 获取本范围内按创建顺序排列的最新操作快照。
+         *
+         * @return 当前请求创建的操作
+         */
+        public List<Operation> operations() {
+            return this.state.operationIds.stream()
+                    .map(OperationManager.this.operations::get)
+                    .filter(Objects::nonNull)
+                    .map(OperationState::snapshot)
+                    .toList();
+        }
+
+        /**
+         * 提交本范围创建的操作，使其可供当前响应转换。
+         */
+        public void commit() {
+            ensureOpen();
+            this.finished = true;
+        }
+
+        /**
+         * 丢弃本范围创建的操作，通常用于聊天失败或没有最终回答的情况。
+         */
+        public void discard() {
+            ensureOpen();
+            OperationManager.this.discard(this.state.operationIds);
+            this.finished = true;
+        }
+
+        @Override
+        public void close() {
+            if (!this.finished) {
+                OperationManager.this.discard(this.state.operationIds);
+            }
+            if (OperationManager.this.currentCapture.get() == this.state) {
+                if (this.previous == null) {
+                    OperationManager.this.currentCapture.remove();
+                }
+                else {
+                    OperationManager.this.currentCapture.set(this.previous);
+                }
+            }
+            this.finished = true;
+        }
+
+        private void ensureOpen() {
+            if (this.finished) {
+                throw new IllegalStateException("operation capture scope is already closed");
+            }
+        }
     }
 }

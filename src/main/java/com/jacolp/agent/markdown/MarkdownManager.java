@@ -1,7 +1,9 @@
 package com.jacolp.agent.markdown;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.Objects;
 import java.util.HashSet;
 import java.util.Set;
@@ -117,6 +119,33 @@ public final class MarkdownManager {
             appendHeadingTree(context, rootNodeId, 0, result, rendered);
         }
         return result.toString();
+    }
+
+    /**
+     * 返回指定章节的标题路径，供前后端协议使用。
+     *
+     * @param documentId 已持久化文档的标识
+     * @param nodeNumber 按原文顺序分配的节点编号
+     * @return 使用半角 {@code |} 分隔的 Markdown 标题路径
+     */
+    public String getSectionText(DocumentId documentId, int nodeNumber) {
+        MarkdownContext context = getEntity(documentId);
+        requireNode(context, nodeNumber);
+
+        List<SectionNode> path = new ArrayList<>();
+        for (SectionNode candidate : context.getNodes().values()) {
+            while (!path.isEmpty() && path.get(path.size() - 1).getLevel() >= candidate.getLevel()) {
+                path.remove(path.size() - 1);
+            }
+            path.add(candidate);
+            if (candidate.getNumber() == nodeNumber) {
+                return path.stream()
+                        .map(node -> rawHeading(context, node))
+                        .reduce((left, right) -> left + " | " + right)
+                        .orElseThrow(() -> new SectionNotFoundException(documentId, nodeNumber));
+            }
+        }
+        throw new SectionNotFoundException(documentId, nodeNumber);
     }
 
     /**
