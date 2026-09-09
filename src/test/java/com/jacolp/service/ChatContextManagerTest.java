@@ -37,26 +37,27 @@ class ChatContextManagerTest {
     private ChatSessionMapper chatSessionMapper;
 
     @Test
-    void getReturnsTheLastTenMessagesWhileSnapshotKeepsTheFullHistory() throws Exception {
+    void getReturnsTheLastTenSuccessfulRoundsAndSnapshotUsesTheSameWindow() throws Exception {
         when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(1L, "[]", "[]"));
         when(this.chatSessionMapper.updateSnapshot(any(ChatSession.class))).thenReturn(1);
         ChatContextManager manager = manager();
 
         for (int index = 1; index <= 12; index++) {
             manager.add(SESSION_KEY, new UserMessage("message-" + index));
+            manager.add(SESSION_KEY, new AssistantMessage("answer-" + index));
         }
 
         List<Message> context = manager.get(SESSION_KEY);
-        assertEquals(10, context.size());
+        assertEquals(20, context.size());
         assertEquals("message-3", context.get(0).getText());
-        assertEquals("message-12", context.get(9).getText());
+        assertEquals("answer-12", context.get(19).getText());
 
         assertEquals(1, manager.flushDirtySessions(false));
         ArgumentCaptor<ChatSession> snapshotCaptor = ArgumentCaptor.forClass(ChatSession.class);
         verify(this.chatSessionMapper).updateSnapshot(snapshotCaptor.capture());
         JsonNode messages = this.objectMapper.readTree(snapshotCaptor.getValue().getMessages());
-        assertEquals(12, messages.size());
-        assertEquals("message-1", messages.get(0).get("content").asText());
+        assertEquals(20, messages.size());
+        assertEquals("message-3", messages.get(0).get("content").asText());
         assertEquals("user", messages.get(0).get("role").asText());
     }
 
@@ -134,11 +135,56 @@ class ChatContextManagerTest {
 
     @Test
     void emptyReferenceMetadataDoesNotMarkConversationDirty() {
-        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(9L, "[]", "[]"));
         ChatContextManager manager = manager();
 
         manager.appendReferenceMetadata(SESSION_KEY, new ChatMessageDTO("hello", List.of(), List.of()));
 
+        assertEquals(0, manager.flushDirtySessions(false));
+        verify(this.chatSessionMapper, never()).updateSnapshot(any(ChatSession.class));
+    }
+
+    @Test
+    void successfulTurnStoresOriginalQuestionAndReferenceSnapshot() throws Exception {
+        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(10L, "[]", "[]"));
+        when(this.chatSessionMapper.updateSnapshot(any(ChatSession.class))).thenReturn(1);
+        ChatContextManager manager = manager();
+        ChatMessageDTO message = new ChatMessageDTO(
+                "original question",
+                List.of(3L),
+                List.of(new SelectionDTO(3L, "selected", "# Guide")));
+
+        String answer = manager.executeSuccessfulTurn(SESSION_KEY, message, () -> {
+            manager.add(SESSION_KEY, new UserMessage("original question\n\n<selections>temporary</selections>"));
+            manager.add(SESSION_KEY, new AssistantMessage("final answer"));
+            return "final answer";
+        });
+
+        assertEquals("final answer", answer);
+        assertEquals(1, manager.flushDirtySessions(false));
+        ArgumentCaptor<ChatSession> snapshotCaptor = ArgumentCaptor.forClass(ChatSession.class);
+        verify(this.chatSessionMapper).updateSnapshot(snapshotCaptor.capture());
+        JsonNode snapshot = snapshotCaptor.getValue() == null
+                ? null
+                : this.objectMapper.readTree(snapshotCaptor.getValue().getMessages());
+        assertEquals("original question", snapshot.get(0).get("content").asText());
+        assertEquals(1, this.objectMapper.readTree(snapshotCaptor.getValue().getReferencedFileContents()).size());
+    }
+
+    @Test
+    void failedTurnRollsBackAdvisorMessagesAndReferences() {
+        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(11L, "[]", "[]"));
+        ChatContextManager manager = manager();
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalStateException.class,
+                () -> manager.executeSuccessfulTurn(SESSION_KEY,
+                        new ChatMessageDTO("question", List.of(1L), List.of()),
+                        () -> {
+                            manager.add(SESSION_KEY, new UserMessage("question"));
+                            throw new IllegalStateException("model failed");
+                        }));
+
+        assertEquals(List.of(), manager.get(SESSION_KEY));
         assertEquals(0, manager.flushDirtySessions(false));
         verify(this.chatSessionMapper, never()).updateSnapshot(any(ChatSession.class));
     }

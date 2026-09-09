@@ -16,6 +16,10 @@ import java.util.function.Consumer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jacolp.agent.context.ChatContextManager;
+import com.jacolp.agent.markdown.MarkdownManager;
+import com.jacolp.agent.markdown.model.DocumentId;
+import com.jacolp.agent.markdown.model.SectionNodeRef;
+import com.jacolp.agent.markdown.operation.OperationManager;
 import com.jacolp.mapper.ChatSessionMapper;
 import com.jacolp.pojo.dto.ChatMessageDTO;
 import com.jacolp.pojo.dto.ChatRequestDTO;
@@ -79,7 +83,7 @@ class ChatControllerTest {
         when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(6L));
         when(this.chatSessionMapper.updateSnapshot(any(ChatSession.class))).thenReturn(1);
         when(this.chatClient.prompt()).thenReturn(this.requestSpec);
-        when(this.requestSpec.user("inspect these documents")).thenReturn(this.requestSpec);
+        when(this.requestSpec.user(any(String.class))).thenReturn(this.requestSpec);
         when(this.requestSpec.call()).thenReturn(this.responseSpec);
         when(this.responseSpec.content()).thenReturn("answer");
 
@@ -97,13 +101,16 @@ class ChatControllerTest {
         ChatMessageDTO message = new ChatMessageDTO(
                 "inspect these documents",
                 List.of(1L, 2L, 3L),
-                List.of(new SelectionDTO(2L, "selected text", "# Guide｜## Install")));
+                List.of(new SelectionDTO(2L, "selected text", "# Guide | ## Install")));
 
         ChatController.ChatResponse response = controller.chat(new ChatRequestDTO(SESSION_KEY, message));
 
         assertEquals("answer", response.content());
         assertEquals(1, chatContextManager.flushDirtySessions(false));
-        verify(this.requestSpec).user("inspect these documents");
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(this.requestSpec).user(promptCaptor.capture());
+        assertEquals(true, promptCaptor.getValue().contains("<documentIds>"));
+        assertEquals(true, promptCaptor.getValue().contains("<selections>"));
         ArgumentCaptor<ChatSession> snapshotCaptor = ArgumentCaptor.forClass(ChatSession.class);
         verify(this.chatSessionMapper).updateSnapshot(snapshotCaptor.capture());
         JsonNode references = objectMapper.readTree(snapshotCaptor.getValue().getReferencedFileContents());
@@ -115,13 +122,14 @@ class ChatControllerTest {
         assertEquals(3L, reference.get("documentIds").get(2).asLong());
         JsonNode selection = reference.get("selections").get(0);
         assertEquals("selected text", selection.get("originalText").asText());
-        assertEquals("# Guide｜## Install", selection.get("sectionText").asText());
+        assertEquals("# Guide | ## Install", selection.get("sectionText").asText());
         assertFalse(selection.has("content"));
     }
 
     @Test
-    void chatDoesNotPersistAnEmptyReferenceRecord() {
+    void chatPersistsAnEmptyReferenceRecordForASuccessfulRound() throws Exception {
         when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(7L));
+        when(this.chatSessionMapper.updateSnapshot(any(ChatSession.class))).thenReturn(1);
         when(this.chatClient.prompt()).thenReturn(this.requestSpec);
         when(this.requestSpec.user("hello")).thenReturn(this.requestSpec);
         when(this.requestSpec.call()).thenReturn(this.responseSpec);
@@ -141,8 +149,12 @@ class ChatControllerTest {
         controller.chat(new ChatRequestDTO(
                 SESSION_KEY, new ChatMessageDTO("hello", List.of(), List.of())));
 
-        assertEquals(0, chatContextManager.flushDirtySessions(false));
-        verify(this.chatSessionMapper, never()).updateSnapshot(any(ChatSession.class));
+        assertEquals(1, chatContextManager.flushDirtySessions(false));
+        ArgumentCaptor<ChatSession> snapshotCaptor = ArgumentCaptor.forClass(ChatSession.class);
+        verify(this.chatSessionMapper).updateSnapshot(snapshotCaptor.capture());
+        JsonNode references = new ObjectMapper().readTree(snapshotCaptor.getValue().getReferencedFileContents());
+        assertEquals(1, references.size());
+        assertEquals(0, references.get(0).get("documentIds").size());
     }
 
     @Test
@@ -228,6 +240,43 @@ class ChatControllerTest {
                                 "hello", List.of(), List.of(new SelectionDTO(1L, "selected", null))))));
 
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+    }
+
+    @Test
+    void chatReturnsOperationsCreatedByTheCurrentRequest() {
+        when(this.chatSessionMapper.selectBySessionKey(SESSION_KEY)).thenReturn(session(8L));
+        when(this.chatClient.prompt()).thenReturn(this.requestSpec);
+        when(this.requestSpec.user(any(String.class))).thenReturn(this.requestSpec);
+        when(this.requestSpec.call()).thenReturn(this.responseSpec);
+        ChatClient.AdvisorSpec advisorSpec = mock(ChatClient.AdvisorSpec.class);
+        doAnswer(invocation -> {
+            Consumer<ChatClient.AdvisorSpec> consumer = invocation.getArgument(0);
+            consumer.accept(advisorSpec);
+            return this.requestSpec;
+        }).when(this.requestSpec).advisors(any(Consumer.class));
+
+        MarkdownManager markdownManager = new MarkdownManager(
+                snapshot -> { }, new DocumentId(1L), "# Java\nold\n\n## Install\n");
+        OperationManager operationManager = new OperationManager(markdownManager);
+        when(this.responseSpec.content()).thenAnswer(invocation -> {
+            operationManager.create(new SectionNodeRef(new DocumentId(1L), 1), "old", "new");
+            return "answer";
+        });
+
+        ChatController controller = new ChatController(
+                this.chatClient,
+                new ChatContextManager(this.chatSessionMapper, new ObjectMapper()),
+                operationManager);
+
+        ChatController.ChatResponse response = controller.chat(new ChatRequestDTO(
+                SESSION_KEY, new ChatMessageDTO("rewrite", List.of(), List.of())));
+
+        assertEquals("answer", response.content());
+        assertEquals(1, response.operations().size());
+        assertEquals(1L, response.operations().get(0).getDocumentId());
+        assertEquals("# Java", response.operations().get(0).getSectionText());
+        assertEquals("old", response.operations().get(0).getOriginalText());
+        assertEquals("new", response.operations().get(0).getNewText());
     }
 
     private static ChatSession session(long id) {

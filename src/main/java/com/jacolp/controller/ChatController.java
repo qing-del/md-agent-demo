@@ -1,13 +1,18 @@
 package com.jacolp.controller;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 import com.jacolp.agent.audit.AuditContext;
 import com.jacolp.agent.context.ChatContextManager;
+import com.jacolp.agent.context.ChatPromptAssembler;
+import com.jacolp.agent.markdown.operation.Operation;
+import com.jacolp.agent.markdown.operation.OperationManager;
 import com.jacolp.pojo.dto.ChatMessageDTO;
 import com.jacolp.pojo.dto.ChatRequestDTO;
 import com.jacolp.pojo.dto.SelectionDTO;
+import com.jacolp.pojo.vo.ChatOperationVO;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.http.HttpStatus;
@@ -28,6 +33,10 @@ public class ChatController {
 
     private final ChatContextManager chatContextManager;
 
+    private final ChatPromptAssembler promptAssembler;
+
+    private final OperationManager operationManager;
+
     /**
      * 创建聊天控制器。
      *
@@ -35,8 +44,25 @@ public class ChatController {
      * @param chatContextManager 用于串行化同一会话请求的上下文管理器
      */
     public ChatController(ChatClient chatClient, ChatContextManager chatContextManager) {
+        this(chatClient, chatContextManager, null);
+    }
+
+    /**
+     * 创建完整聊天控制器。
+     *
+     * @param chatClient Spring AI 聊天客户端
+     * @param chatContextManager 用于串行化和提交聊天轮次的上下文管理器
+     * @param operationManager 当前请求的操作提案管理器
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    public ChatController(
+            ChatClient chatClient,
+            ChatContextManager chatContextManager,
+            OperationManager operationManager) {
         this.chatClient = chatClient;
         this.chatContextManager = chatContextManager;
+        this.promptAssembler = new ChatPromptAssembler();
+        this.operationManager = operationManager;
     }
 
     /**
@@ -64,21 +90,46 @@ public class ChatController {
         validateSelections(message.getSelections());
 
         String conversationId = canonicalSessionKey(request.getSessionKey());
+        String prompt = this.promptAssembler.assemble(message);
         try (AuditContext.Scope ignored = AuditContext.open(conversationId)) {
-            // 整个模型调用期间持有会话锁，避免同一会话的用户消息和 AI 回复交叉写入历史。
-            String content = this.chatContextManager.withConversationLock(conversationId,
-                    () -> {
-                        // 引用元数据与本轮模型调用共享会话锁，避免并发请求交叉追加引用记录。
-                        this.chatContextManager.appendReferenceMetadata(conversationId, message);
-                        return this.chatClient.prompt()
-                                .advisors(advisorSpec -> advisorSpec.param(ChatMemory.CONVERSATION_ID, conversationId))
-                                .user(message.getContent())
-                                .call()
-                                .content();
-                    });
+            if (this.operationManager == null) {
+                return new ChatResponse(executeTurn(conversationId, message, prompt), List.of());
+            }
 
-            return new ChatResponse(content);
+            try (OperationManager.RequestScope operationScope = this.operationManager.capture()) {
+                List<ChatOperationVO> operations = new ArrayList<>();
+                String content = this.chatContextManager.executeSuccessfulTurn(
+                        conversationId,
+                        message,
+                        () -> {
+                            String answer = invokeModel(conversationId, prompt);
+                            // 响应组装也属于成功提交边界；标题路径失效时回滚本轮历史和引用。
+                            operations.addAll(operationScope.operations().stream()
+                                    .map(this::toChatOperation)
+                                    .toList());
+                            return answer;
+                        });
+                operationScope.commit();
+                return new ChatResponse(content, operations);
+            }
         }
+    }
+
+    private String executeTurn(String conversationId, ChatMessageDTO message, String prompt) {
+        return this.chatContextManager.executeSuccessfulTurn(conversationId, message,
+                () -> invokeModel(conversationId, prompt));
+    }
+
+    private String invokeModel(String conversationId, String prompt) {
+        return this.chatClient.prompt()
+                .advisors(advisorSpec -> advisorSpec.param(ChatMemory.CONVERSATION_ID, conversationId))
+                .user(prompt)
+                .call()
+                .content();
+    }
+
+    private ChatOperationVO toChatOperation(Operation operation) {
+        return ChatOperationVO.from(operation, this.operationManager.sectionText(operation));
     }
 
     /**
@@ -156,7 +207,16 @@ public class ChatController {
      * 聊天接口响应。
      *
      * @param content AI 回复内容
+     * @param operations 本轮生成的替换提案
      */
-    public record ChatResponse(String content) {
+    public record ChatResponse(String content, List<ChatOperationVO> operations) {
+
+        public ChatResponse(String content) {
+            this(content, List.of());
+        }
+
+        public ChatResponse {
+            operations = operations == null ? List.of() : List.copyOf(operations);
+        }
     }
 }

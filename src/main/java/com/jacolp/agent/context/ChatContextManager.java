@@ -23,7 +23,6 @@ import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.MessageType;
-import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,14 +31,14 @@ import org.springframework.stereotype.Service;
 /**
  * 基于内存的聊天记忆实现。
  *
- * <p>内部保留完整消息历史供持久化使用，同时只向 Spring AI 暴露固定大小的滑动窗口。</p>
+ * <p>只保留最近的完整成功轮次，并将同一窗口提供给 Spring AI。</p>
  */
 @Service
 public class ChatContextManager implements ChatMemory {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ChatContextManager.class);
 
-    private static final int MAX_CONTEXT_MESSAGES = 10;
+    private static final int MAX_CONTEXT_ROUNDS = 10;
 
     private static final TypeReference<List<StoredMessage>> STORED_MESSAGES_TYPE = new TypeReference<>() {
     };
@@ -63,12 +62,12 @@ public class ChatContextManager implements ChatMemory {
     }
 
     /**
-     * 将消息追加到指定会话的完整历史，并将会话标记为待刷新。
+     * 将用户或助手消息追加到指定会话的历史，并将会话标记为待刷新。
      *
      * @param conversationId UUID 会话标识
      * @param messages 待追加的消息列表
      * @throws IllegalArgumentException UUID 会话标识非法或消息列表包含空元素时抛出
-     * @throws NullPointerException 消息列表为空时抛出
+     * @throws NullPointerException 消息列表为 {@code null} 时抛出
      */
     @Override
     public void add(String conversationId, List<Message> messages) {
@@ -79,14 +78,22 @@ public class ChatContextManager implements ChatMemory {
             throw new IllegalArgumentException("messages cannot contain null elements");
         }
 
+        List<Message> historyMessages = messages.stream()
+                .filter(ConversationState::isHistoryMessage)
+                .toList();
+        if (historyMessages.isEmpty()) {
+            return;
+        }
+
         ConversationState conversation = getOrLoad(canonicalConversationId);
         conversation.lock.lock();
         try {
-            // 空列表不改变快照，因此无需产生一次无意义的刷新任务。
-            if (!messages.isEmpty()) {
-                conversation.messages.addAll(messages);
-                conversation.dirty = true;
-            }
+            // 没有用户或助手消息时不改变快照，因此无需产生一次无意义的刷新任务。
+            conversation.messages.addAll(historyMessages.stream()
+                    .map(conversation::normalizeHistoryMessage)
+                    .toList());
+            conversation.trimToRecentRounds(this.objectMapper);
+            conversation.dirty = true;
         }
         finally {
             conversation.lock.unlock();
@@ -97,7 +104,7 @@ public class ChatContextManager implements ChatMemory {
      * 获取指定会话的上下文窗口。
      *
      * @param conversationId UUID 会话标识
-     * @return 最近 {@value #MAX_CONTEXT_MESSAGES} 条消息
+     * @return 最近 {@value #MAX_CONTEXT_ROUNDS} 个成功轮次中的消息
      * @throws IllegalArgumentException UUID 会话标识非法时抛出
      */
     @Override
@@ -106,8 +113,8 @@ public class ChatContextManager implements ChatMemory {
         ConversationState conversation = getOrLoad(canonicalConversationId);
         conversation.lock.lock();
         try {
-            // 完整历史用于持久化，模型上下文只取尾部窗口以限制单次请求的上下文规模。
-            int firstMessage = Math.max(0, conversation.messages.size() - MAX_CONTEXT_MESSAGES);
+            // 以用户消息作为轮次起点，保证窗口从完整轮次边界开始。
+            int firstMessage = firstMessageOfRecentRounds(conversation.messages);
             return List.copyOf(conversation.messages.subList(firstMessage, conversation.messages.size()));
         }
         finally {
@@ -161,9 +168,60 @@ public class ChatContextManager implements ChatMemory {
         conversation.lock.lock();
         try {
             conversation.appendReferenceMetadata(message, this.objectMapper);
+            conversation.trimReferencesToRecentRounds(this.objectMapper);
             conversation.dirty = true;
         }
         finally {
+            conversation.lock.unlock();
+        }
+    }
+
+    /**
+     * 在同一会话锁内执行一次成功聊天轮次。
+     *
+     * <p>Spring AI 的 memory advisor 会在模型调用前追加用户消息、调用后追加助手消息；本方法在
+     * 最终回答有效时提交引用快照，在异常或空回答时恢复调用前的消息和引用状态。</p>
+     *
+     * @param conversationId UUID 会话标识
+     * @param message 本轮用户原始消息
+     * @param action 模型调用动作
+     * @return 非空的最终回答
+     * @throws IllegalArgumentException UUID 会话标识非法时抛出
+     * @throws IllegalStateException 最终回答为空时抛出
+     * @throws NullPointerException 参数为空时抛出
+     */
+    public String executeSuccessfulTurn(
+            String conversationId,
+            ChatMessageDTO message,
+            Supplier<String> action) {
+        String canonicalConversationId = canonicalConversationId(conversationId);
+        Objects.requireNonNull(message, "message cannot be null");
+        Objects.requireNonNull(message.getContent(), "message.content cannot be null");
+        Objects.requireNonNull(action, "action cannot be null");
+
+        ConversationState conversation = getOrLoad(canonicalConversationId);
+        conversation.lock.lock();
+        ConversationSnapshot beforeTurn = conversation.snapshot();
+        String previousOriginalContent = conversation.pendingOriginalContent;
+        conversation.pendingOriginalContent = message.getContent();
+        try {
+            String content = action.get();
+            if (content == null || content.isBlank()) {
+                throw new IllegalStateException("chat response content must not be null or blank");
+            }
+
+            // 引用信息只在最终回答有效时提交，确保失败请求不污染当前上下文快照。
+            conversation.appendReferenceMetadata(message, this.objectMapper);
+            conversation.trimToRecentRounds(this.objectMapper);
+            conversation.dirty = true;
+            return content;
+        }
+        catch (RuntimeException exception) {
+            conversation.restore(beforeTurn);
+            throw exception;
+        }
+        finally {
+            conversation.pendingOriginalContent = previousOriginalContent;
             conversation.lock.unlock();
         }
     }
@@ -336,6 +394,8 @@ public class ChatContextManager implements ChatMemory {
 
         private boolean dirty;
 
+        private String pendingOriginalContent;
+
         /**
          * 创建一个会话内存状态。
          *
@@ -371,14 +431,15 @@ public class ChatContextManager implements ChatMemory {
                 ObjectMapper objectMapper,
                 String conversationId) {
             // 文件引用 JSON 由数据库原样保留，当前阶段不解析或展开完整 Markdown 内容。
-            return new ConversationState(
+            ConversationState conversation = new ConversationState(
                     conversationId,
                     session.getId(),
                     session.getTitle(),
                     readMessages(session.getMessages(), objectMapper, conversationId),
-                    session.getReferencedFileContents() == null
-                            ? "[]"
-                            : session.getReferencedFileContents());
+                    normalizeReferences(session.getReferencedFileContents(), objectMapper, conversationId));
+            // 应用升级或旧版本写入的快照可能超过新窗口，缓存命中前先按完整轮次裁剪。
+            conversation.trimToRecentRounds(objectMapper);
+            return conversation;
         }
 
         /**
@@ -424,6 +485,48 @@ public class ChatContextManager implements ChatMemory {
             }
         }
 
+        private void trimToRecentRounds(ObjectMapper objectMapper) {
+            int firstMessage = firstMessageOfRecentRounds(this.messages);
+            if (firstMessage > 0) {
+                this.messages.subList(0, firstMessage).clear();
+            }
+            trimReferencesToRecentRounds(objectMapper);
+        }
+
+        private void trimReferencesToRecentRounds(ObjectMapper objectMapper) {
+            ArrayNode references = readReferences(this.referencedFileContents, objectMapper, this.conversationId);
+            while (references.size() > MAX_CONTEXT_ROUNDS) {
+                references.remove(0);
+            }
+            try {
+                this.referencedFileContents = objectMapper.writeValueAsString(references);
+            }
+            catch (JsonProcessingException exception) {
+                throw new IllegalStateException(
+                        "Unable to serialize chat session references: " + this.conversationId, exception);
+            }
+        }
+
+        private ConversationSnapshot snapshot() {
+            return new ConversationSnapshot(
+                    List.copyOf(this.messages), this.referencedFileContents, this.dirty);
+        }
+
+        private void restore(ConversationSnapshot snapshot) {
+            this.messages.clear();
+            this.messages.addAll(snapshot.messages());
+            this.referencedFileContents = snapshot.referencedFileContents();
+            this.dirty = snapshot.dirty();
+        }
+
+        private Message normalizeHistoryMessage(Message message) {
+            if (this.pendingOriginalContent != null && message.getMessageType() == MessageType.USER) {
+                // Prompt 可能包含本轮临时 XML 上下文，历史只保留前端提交的原始问题。
+                return new UserMessage(this.pendingOriginalContent);
+            }
+            return message;
+        }
+
         /**
          * 解析数据库中的消息 JSON。
          *
@@ -444,7 +547,21 @@ public class ChatContextManager implements ChatMemory {
                 if (storedMessages == null) {
                     return List.of();
                 }
-                return storedMessages.stream().map(ConversationState::toMessage).toList();
+                List<Message> messages = new ArrayList<>();
+                for (StoredMessage storedMessage : storedMessages) {
+                    if (storedMessage == null || storedMessage.role() == null) {
+                        throw new IllegalArgumentException("stored message role cannot be null");
+                    }
+                    // 工具调用过程和系统提示不是成功轮次中的用户问题或最终回答。
+                    if ("system".equals(storedMessage.role()) || "tool".equals(storedMessage.role())) {
+                        continue;
+                    }
+                    if (storedMessage.content() == null) {
+                        throw new IllegalArgumentException("stored message content cannot be null");
+                    }
+                    messages.add(toMessage(storedMessage));
+                }
+                return messages;
             }
             catch (JsonProcessingException | IllegalArgumentException exception) {
                 throw new IllegalStateException(
@@ -498,6 +615,23 @@ public class ChatContextManager implements ChatMemory {
             }
         }
 
+        private static String normalizeReferences(
+                String referencesJson,
+                ObjectMapper objectMapper,
+                String conversationId) {
+            ArrayNode references = readReferences(referencesJson, objectMapper, conversationId);
+            while (references.size() > MAX_CONTEXT_ROUNDS) {
+                references.remove(0);
+            }
+            try {
+                return objectMapper.writeValueAsString(references);
+            }
+            catch (JsonProcessingException exception) {
+                throw new IllegalStateException(
+                        "Unable to serialize chat session references: " + conversationId, exception);
+            }
+        }
+
         /**
          * 将 Spring AI 消息转换为数据库使用的最小结构。
          *
@@ -507,12 +641,10 @@ public class ChatContextManager implements ChatMemory {
          */
         private static StoredMessage toStoredMessage(Message message) {
             MessageType messageType = message.getMessageType();
-            // v1 只保存对话文本，工具调用等复杂消息类型暂不纳入 JSON 快照。
-            if (messageType != MessageType.SYSTEM
-                    && messageType != MessageType.USER
-                    && messageType != MessageType.ASSISTANT) {
+            // v1.2 只保存用户原始问题和 AI 最终回答，工具调用过程不进入 JSON 快照。
+            if (messageType != MessageType.USER && messageType != MessageType.ASSISTANT) {
                 throw new IllegalArgumentException(
-                        "Only system, user, and assistant messages are supported: " + messageType);
+                        "Only user and assistant messages are supported: " + messageType);
             }
             return new StoredMessage(
                     messageType.getValue(),
@@ -533,12 +665,37 @@ public class ChatContextManager implements ChatMemory {
             }
             // 根据持久化角色恢复对应的 Spring AI 消息实现。
             return switch (storedMessage.role()) {
-                case "system" -> new SystemMessage(storedMessage.content());
                 case "user" -> new UserMessage(storedMessage.content());
                 case "assistant" -> new AssistantMessage(storedMessage.content());
                 default -> throw new IllegalArgumentException(
                         "Unsupported stored chat message role: " + storedMessage.role());
             };
         }
+
+        private static boolean isHistoryMessage(Message message) {
+            return message != null
+                    && message.getText() != null
+                    && (message.getMessageType() == MessageType.USER
+                            || message.getMessageType() == MessageType.ASSISTANT);
+        }
+    }
+
+    private static int firstMessageOfRecentRounds(List<Message> messages) {
+        int userMessages = 0;
+        for (int index = messages.size() - 1; index >= 0; index--) {
+            if (messages.get(index).getMessageType() == MessageType.USER) {
+                userMessages++;
+                if (userMessages == MAX_CONTEXT_ROUNDS) {
+                    return index;
+                }
+            }
+        }
+        return 0;
+    }
+
+    private record ConversationSnapshot(
+            List<Message> messages,
+            String referencedFileContents,
+            boolean dirty) {
     }
 }
