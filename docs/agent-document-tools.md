@@ -61,3 +61,36 @@
 并在接收结果时检查本地草稿未发生变化，再整体更新草稿，由用户保存。
 现有草稿保存协议没有加入版本条件更新；本轮不解决旧客户端覆盖保存的问题。
 同一 JVM 的上传覆盖、草稿同步、删除、SDK 替换和提案确认共用文档锁；不提供多实例协调。
+
+## 单文档批量修改
+
+`propose_document_patch(documentId, baseRevision, edits)` 创建 `kind: "patch"` 的整体提案，
+包含 1～50 项非空编辑，所有章节编号和原文均相对于同一个 `baseRevision`。
+每项不能指定其他文档，也不能依赖前一项刚插入或替换的内容。
+
+```json
+{
+  "documentId": 42,
+  "baseRevision": "读取结果中的SHA-256",
+  "edits": [
+    {"type":"replace","nodeNumber":5,"originalText":"最多重试三次","newText":"最多重试五次"},
+    {"type":"insert","nodeNumber":8,"position":"body_end","newText":"\n\n建议开启监控。"}
+  ]
+}
+```
+
+`replace` 的 `originalText` 必须在章节直属正文中唯一出现，`newText` 空字符串表示删除，
+不接受 `position` 或 `anchorText`。`insert` 的位置及锚点规则与单项插入相同，
+不接受 `originalText`。字段值区分大小写。
+
+一次解析全部编辑为基础原文的坐标，拒绝重叠替换、替换内部或边界上的插入、同位置多项插入。
+相邻但不重叠的两项替换允许执行。删除整行扩展出的换行也计入冲突检测范围。
+按原始坐标从后向前生成一份候选原文，仅在最后重新解析章节树，不逐项写库。
+
+查询、试应用、确认、取消沿用现有操作接口。`edits` 返回全部逐项差异，顺序与请求一致；
+试应用返回完整候选内容，确认只持久化一次。任何一项无效时不创建提案，也不产生部分修改。
+所有提案仍使用同一请求捕获与失败清理机制。
+
+为兼容已有接口，批量提案顶层的 `nodeNumber`、`sectionText`（聊天响应中）、
+`originalText`、`newText` 指第一项编辑；客户端必须按 `kind` 分支，使用完整 `edits`，
+不能把顶层字段当作整个批量提案。结果中的 `revision` 是整个文档的新版本。

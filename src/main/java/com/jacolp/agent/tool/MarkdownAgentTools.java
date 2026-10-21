@@ -1,10 +1,12 @@
 package com.jacolp.agent.tool;
 
 import java.util.Objects;
+import java.util.List;
 
 import com.jacolp.agent.markdown.MarkdownContextProvider;
 import com.jacolp.agent.markdown.MarkdownManager;
 import com.jacolp.agent.markdown.model.DocumentId;
+import com.jacolp.agent.markdown.model.DocumentEdit;
 import com.jacolp.agent.markdown.model.DocumentSearchPage;
 import com.jacolp.agent.markdown.model.SectionNodeRef;
 import com.jacolp.agent.markdown.model.SectionPage;
@@ -117,6 +119,16 @@ public class MarkdownAgentTools {
         DocumentId id = this.contextProvider.ensureLoaded(documentId);
         return SectionReplaceProposal.from(this.operationManager.createInsert(
                 id, baseRevision, nodeNumber, position, anchorText, newText));
+    }
+
+    @Tool(name = "propose_document_patch",
+            description = "创建单篇文档的整体修改提案，不修改文档。含1到50项replace/insert编辑，全部针对同一baseRevision原文定位；不支持编辑间依赖、重叠范围或同一插入边界。任一项无效则整体拒绝，用户确认后整体应用。")
+    public SectionReplaceProposal proposeDocumentPatch(
+            @ToolParam(description = "唯一目标 Markdown 文档 ID") long documentId,
+            @ToolParam(description = "读取结果中的 revision，所有编辑均针对该版本") String baseRevision,
+            @ToolParam(description = "1到50项编辑。replace需originalText，newText为空表示删除；insert需position及必要的anchorText。不要提供不适用字段。") List<DocumentEdit> edits) {
+        DocumentId id = this.contextProvider.ensureLoaded(documentId);
+        return SectionReplaceProposal.from(this.operationManager.createPatch(id, baseRevision, edits));
     }
 
     /**

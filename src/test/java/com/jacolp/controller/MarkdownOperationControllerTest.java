@@ -3,6 +3,7 @@ package com.jacolp.controller;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import java.util.UUID;
@@ -18,6 +19,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import com.jacolp.agent.markdown.model.DocumentEdit;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 class MarkdownOperationControllerTest {
 
@@ -80,5 +84,30 @@ class MarkdownOperationControllerTest {
                 .andExpect(status().isBadRequest());
         assertEquals(source, markdown.restoreMarkdown(DOCUMENT_ID));
         assertEquals(OperationStatus.PENDING, manager.get(operation.getOpId()).getStatus());
+    }
+
+    @Test
+    void queriesPreviewsAndConfirmsOneWholePatchThroughHttp() throws Exception {
+        AtomicInteger saves = new AtomicInteger();
+        String source = "# Root\nalpha\nbeta\n";
+        MarkdownManager markdown = new MarkdownManager(snapshot -> saves.incrementAndGet(), DOCUMENT_ID, source);
+        OperationManager manager = new OperationManager(markdown);
+        var operation = manager.createPatch(DOCUMENT_ID, markdown.getEntity(DOCUMENT_ID).getRevision(), List.of(
+                DocumentEdit.replace(1, "alpha", "A"), DocumentEdit.replace(1, "beta", "B")));
+        var mvc = MockMvcBuilders.standaloneSetup(new MarkdownOperationController(manager)).build();
+        String endpoint = "/api/markdown-operations/" + operation.getOpId();
+        mvc.perform(get(endpoint)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.kind").value("patch"))
+                .andExpect(jsonPath("$.edits.length()").value(2));
+        mvc.perform(post(endpoint + "/preview").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"content\":\"# Root\\nalpha\\nbeta\\n\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content").value("# Root\nA\nB\n"));
+        assertEquals(0, saves.get());
+        mvc.perform(post(endpoint + "/confirm")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.kind").value("patch"))
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.revision").value(markdown.getEntity(DOCUMENT_ID).getRevision()));
+        mvc.perform(post(endpoint + "/confirm")).andExpect(status().isConflict());
+        assertEquals(1, saves.get());
     }
 }

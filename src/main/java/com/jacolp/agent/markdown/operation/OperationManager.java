@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import com.jacolp.agent.markdown.MarkdownManager;
+import com.jacolp.agent.markdown.exception.MarkdownReplacementException;
 import com.jacolp.agent.markdown.model.ReplaceResult;
 import com.jacolp.agent.markdown.model.DocumentEdit;
 import com.jacolp.agent.markdown.model.DocumentEditPreview;
@@ -54,6 +55,15 @@ public final class OperationManager {
             String position, String anchorText, String newText) {
         return this.markdownManager.withDocumentLock(id, () -> createVersioned(id, baseRevision, "insert",
                 List.of(DocumentEdit.insert(nodeNumber, position, anchorText, newText))));
+    }
+
+    public Operation createPatch(DocumentId id, String baseRevision, List<DocumentEdit> edits) {
+        if (edits == null || edits.isEmpty() || edits.size() > 50 || edits.stream().anyMatch(Objects::isNull)) {
+            throw new MarkdownReplacementException("patch must contain 1 to 50 non-null edits");
+        }
+        List<DocumentEdit> immutableEdits = List.copyOf(edits);
+        return this.markdownManager.withDocumentLock(id,
+                () -> createVersioned(id, baseRevision, "patch", immutableEdits));
     }
 
     private Operation createVersioned(DocumentId id, String revision, String kind, List<DocumentEdit> edits) {
