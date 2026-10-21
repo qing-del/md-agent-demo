@@ -1,6 +1,9 @@
 package com.jacolp.controller;
 
 import java.util.UUID;
+import com.jacolp.agent.markdown.model.DocumentEditPreview;
+import com.jacolp.agent.markdown.exception.MarkdownRevisionException;
+import org.springframework.web.bind.annotation.RequestBody;
 
 import com.jacolp.agent.markdown.exception.MarkdownContextNotFoundException;
 import com.jacolp.agent.markdown.exception.MarkdownCursorException;
@@ -91,6 +94,21 @@ public class MarkdownOperationController {
         }
     }
 
+    public record PreviewRequest(String content) { }
+
+    @PostMapping("/{opId}/preview")
+    public DocumentEditPreview preview(@PathVariable("opId") UUID opId, @RequestBody PreviewRequest request) {
+        if (request == null || request.content() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "content must not be null");
+        }
+        try {
+            return this.operationManager.preview(opId, request.content());
+        }
+        catch (MarkdownException exception) {
+            throw toHttpException(exception);
+        }
+    }
+
     private static ResponseStatusException toHttpException(MarkdownException exception) {
         HttpStatus status;
         if (exception instanceof OperationNotFoundException
@@ -98,7 +116,7 @@ public class MarkdownOperationController {
                 || exception instanceof SectionNotFoundException) {
             status = HttpStatus.NOT_FOUND;
         }
-        else if (exception instanceof OperationStateException) {
+        else if (exception instanceof OperationStateException || exception instanceof MarkdownRevisionException) {
             status = HttpStatus.CONFLICT;
         }
         else if (exception instanceof MarkdownReplacementException

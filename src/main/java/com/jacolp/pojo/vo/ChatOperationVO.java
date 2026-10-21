@@ -1,15 +1,20 @@
 package com.jacolp.pojo.vo;
 
 import java.util.Objects;
+import java.util.List;
+import com.jacolp.agent.markdown.operation.OperationDetails;
+import com.jacolp.agent.markdown.model.EditDiff;
 
 import com.jacolp.agent.markdown.operation.Operation;
 
 /**
- * 聊天响应中返回给前端的 Markdown 替换提案。
+ * 聊天响应中返回给前端的版本化 Markdown 编辑提案。
  *
- * <p>内部章节编号不会暴露给前端，前端只使用标题路径和精确文本生成本地 diff。</p>
+ * <p>保留旧替换字段；新客户端使用 kind、baseRevision 和逐项差异，并通过 preview 试应用。</p>
  */
 public final class ChatOperationVO {
+
+    private final OperationDetails details;
 
     private final String opId;
 
@@ -36,6 +41,12 @@ public final class ChatOperationVO {
             String sectionText,
             String originalText,
             String newText) {
+        this(opId, documentId, sectionText, originalText, newText, null);
+    }
+
+    private ChatOperationVO(String opId, long documentId, String sectionText, String originalText,
+            String newText, OperationDetails details) {
+        this.details = details;
         this.opId = Objects.requireNonNull(opId, "opId cannot be null");
         this.sectionText = Objects.requireNonNull(sectionText, "sectionText cannot be null");
         this.originalText = Objects.requireNonNull(originalText, "originalText cannot be null");
@@ -60,7 +71,19 @@ public final class ChatOperationVO {
                 operation.getSection().getDocumentId().value(),
                 sectionText,
                 operation.getOriginalText(),
-                operation.getNewText());
+                operation.getNewText(), operation.details());
+    }
+
+    public String getKind() {
+        return this.details == null ? "replace" : this.details.kind();
+    }
+
+    public String getBaseRevision() {
+        return this.details == null ? null : this.details.baseRevision();
+    }
+
+    public List<EditDiff> getEdits() {
+        return this.details == null ? List.of() : this.details.diffs();
     }
 
     public String getOpId() {

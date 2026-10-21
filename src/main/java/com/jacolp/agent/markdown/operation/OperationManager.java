@@ -8,9 +8,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import com.jacolp.agent.markdown.MarkdownManager;
-import com.jacolp.agent.markdown.exception.MarkdownReplacementException;
-import com.jacolp.agent.markdown.exception.SectionNotFoundException;
 import com.jacolp.agent.markdown.model.ReplaceResult;
+import com.jacolp.agent.markdown.model.DocumentEdit;
+import com.jacolp.agent.markdown.model.DocumentEditPreview;
+import com.jacolp.agent.markdown.model.DocumentId;
 import com.jacolp.agent.markdown.model.SectionNodeRef;
 
 /**
@@ -43,26 +44,44 @@ public final class OperationManager {
      */
     public Operation create(SectionNodeRef section, String originalText, String newText) {
         Objects.requireNonNull(section, "section cannot be null");
-        Objects.requireNonNull(originalText, "originalText cannot be null");
-        Objects.requireNonNull(newText, "newText cannot be null");
-        if (originalText.isEmpty()) {
-            // 与 MarkdownManager 一致，不允许空字符串作为无限匹配目标。
-            throw new MarkdownReplacementException("originalText must not be empty");
-        }
+        return this.markdownManager.withDocumentLock(section.getDocumentId(), () ->
+                createVersioned(section.getDocumentId(),
+                        this.markdownManager.getEntity(section.getDocumentId()).getRevision(), "replace",
+                        List.of(DocumentEdit.replace(section.getNodeNumber(), originalText, newText))));
+    }
 
-        // 创建提案前确认节点仍存在，尽早拒绝过期的章节引用。
-        if (!this.markdownManager.getEntity(section.getDocumentId()).getNodes().containsKey(section.getNodeNumber())) {
-            throw new SectionNotFoundException(section.getDocumentId(), section.getNodeNumber());
-        }
+    public Operation createInsert(DocumentId id, String baseRevision, int nodeNumber,
+            String position, String anchorText, String newText) {
+        return this.markdownManager.withDocumentLock(id, () -> createVersioned(id, baseRevision, "insert",
+                List.of(DocumentEdit.insert(nodeNumber, position, anchorText, newText))));
+    }
 
+    private Operation createVersioned(DocumentId id, String revision, String kind, List<DocumentEdit> edits) {
+        var base = this.markdownManager.getEntity(id);
+        DocumentEditPreview preview = this.markdownManager.previewEdits(id, revision, base.getSource(), edits);
+        var first = preview.edits().get(0);
+        OperationDetails details = new OperationDetails(kind, revision, first.sectionText(), edits, preview.edits());
         UUID opId = UUID.randomUUID();
-        OperationState state = new OperationState(opId, section, originalText, newText);
+        String originalText = edits.get(0).originalText() == null ? "" : edits.get(0).originalText();
+        OperationState state = new OperationState(new Operation(opId,
+                new SectionNodeRef(id, first.nodeNumber()), originalText, first.newText(),
+                OperationStatus.PENDING, details));
         this.operations.put(opId, state);
         CaptureState capture = this.currentCapture.get();
         if (capture != null) {
             capture.operationIds.add(opId);
         }
         return state.snapshot();
+    }
+
+    /** Preview only the supplied draft. An unrelated saved-document update does not mutate that draft. */
+    public DocumentEditPreview preview(UUID opId, String content) {
+        Operation operation = get(opId);
+        if (operation.getStatus() != OperationStatus.PENDING) {
+            throw new OperationStateException(opId, operation.getStatus(), "previewed");
+        }
+        return this.markdownManager.previewEdits(operation.getSection().getDocumentId(),
+                operation.details().baseRevision(), content, operation.details().edits());
     }
 
     /**
@@ -87,8 +106,9 @@ public final class OperationManager {
      */
     public String sectionText(Operation operation) {
         Objects.requireNonNull(operation, "operation cannot be null");
-        return this.markdownManager.getSectionText(
-                operation.getSection().getDocumentId(), operation.getSection().getNodeNumber());
+        return operation.details() == null ? this.markdownManager.getSectionText(
+                operation.getSection().getDocumentId(), operation.getSection().getNodeNumber())
+                : operation.details().sectionText();
     }
 
     /**
@@ -123,24 +143,30 @@ public final class OperationManager {
             // 未知 OpId 没有可确认的提案。
             throw new OperationNotFoundException(opId);
         }
-        if (!state.transition(OperationStatus.PENDING, OperationStatus.EXECUTING)) {
-            // CAS 失败说明其他请求已经确认或取消，当前请求不得重复执行。
+        if (state.status() != OperationStatus.PENDING) {
             throw new OperationStateException(opId, state.status(), "confirmed");
         }
-
-        try {
-            // EXECUTING 状态只允许这一条线程调用 replace。
-            ReplaceResult result = this.markdownManager.replace(
-                    state.section(), state.originalText(), state.newText());
-            // replace 返回表示持久化和上下文刷新均成功，随后进入 COMPLETED。
-            state.transition(OperationStatus.EXECUTING, OperationStatus.COMPLETED);
-            return result;
-        }
-        catch (RuntimeException exception) {
-            // 任一替换或持久化异常都会记录 FAILED，再把原异常交给调用方处理。
-            state.transition(OperationStatus.EXECUTING, OperationStatus.FAILED);
-            throw exception;
-        }
+        return this.markdownManager.withDocumentLock(state.section().getDocumentId(), () -> {
+            if (state.status() != OperationStatus.PENDING) {
+                throw new OperationStateException(opId, state.status(), "confirmed");
+            }
+            Operation operation = state.snapshot();
+            // Check before entering EXECUTING so a stale proposal remains queryable/cancellable.
+            this.markdownManager.requireRevision(state.section().getDocumentId(), operation.details().baseRevision());
+            if (!state.transition(OperationStatus.PENDING, OperationStatus.EXECUTING)) {
+                throw new OperationStateException(opId, state.status(), "confirmed");
+            }
+            try {
+                ReplaceResult result = this.markdownManager.applyEdits(state.section().getDocumentId(),
+                        operation.details().baseRevision(), operation.details().edits());
+                state.transition(OperationStatus.EXECUTING, OperationStatus.COMPLETED);
+                return result;
+            }
+            catch (RuntimeException exception) {
+                state.transition(OperationStatus.EXECUTING, OperationStatus.FAILED);
+                throw exception;
+            }
+        });
     }
 
     /**

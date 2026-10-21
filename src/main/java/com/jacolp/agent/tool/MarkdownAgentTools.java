@@ -105,6 +105,20 @@ public class MarkdownAgentTools {
         return this.markdownManager.searchDocumentContent(id, query, nodeNumber, cursor);
     }
 
+    @Tool(name = "propose_section_insert",
+            description = "创建章节直属正文插入提案，不修改文档。必须使用读取结果的 baseRevision。body_end 位于子章节前；before/after 要求唯一原文锚点。newText 原样插入，须自行提供所需换行。")
+    public SectionReplaceProposal proposeSectionInsert(
+            @ToolParam(description = "Markdown 文档 ID") long documentId,
+            @ToolParam(description = "读取结果中的 revision") String baseRevision,
+            @ToolParam(description = "基础版本的章节编号") int nodeNumber,
+            @ToolParam(description = "body_start/body_end/before/after") String position,
+            @ToolParam(required = false, description = "before/after 必需的唯一原文锚点；其他位置省略") String anchorText,
+            @ToolParam(description = "非空新增原文，包含所需换行") String newText) {
+        DocumentId id = this.contextProvider.ensureLoaded(documentId);
+        return SectionReplaceProposal.from(this.operationManager.createInsert(
+                id, baseRevision, nodeNumber, position, anchorText, newText));
+    }
+
     /**
      * 创建等待用户确认的 Markdown 替换提案。
      *

@@ -1,6 +1,9 @@
 package com.jacolp.agent.markdown.model;
 
 import java.util.Objects;
+import java.util.List;
+import com.jacolp.agent.markdown.operation.OperationDetails;
+import com.jacolp.agent.markdown.model.EditDiff;
 
 import com.jacolp.agent.markdown.operation.Operation;
 import com.jacolp.agent.markdown.operation.OperationStatus;
@@ -9,6 +12,8 @@ import com.jacolp.agent.markdown.operation.OperationStatus;
  * 已确认 Markdown 替换的结果摘要。
  */
 public final class SectionReplaceResult {
+
+    private final OperationDetails details;
 
     private final String opId;
 
@@ -35,6 +40,12 @@ public final class SectionReplaceResult {
             int nodeNumber,
             OperationStatus status,
             String revision) {
+        this(opId, documentId, nodeNumber, status, revision, null);
+    }
+
+    private SectionReplaceResult(String opId, long documentId, int nodeNumber, OperationStatus status,
+            String revision, OperationDetails details) {
+        this.details = details;
         this.opId = Objects.requireNonNull(opId, "opId cannot be null");
         this.status = Objects.requireNonNull(status, "status cannot be null");
         this.revision = Objects.requireNonNull(revision, "revision cannot be null");
@@ -64,7 +75,19 @@ public final class SectionReplaceResult {
                 section.getDocumentId().value(),
                 section.getNodeNumber(),
                 operation.getStatus(),
-                result.getContext().getRevision());
+                result.getContext().getRevision(), operation.details());
+    }
+
+    public String getKind() {
+        return this.details == null ? "replace" : this.details.kind();
+    }
+
+    public String getBaseRevision() {
+        return this.details == null ? null : this.details.baseRevision();
+    }
+
+    public List<EditDiff> getEdits() {
+        return this.details == null ? List.of() : this.details.diffs();
     }
 
     public String getOpId() {

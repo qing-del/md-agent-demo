@@ -5,6 +5,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.concurrent.locks.ReentrantLock;
+import com.jacolp.agent.markdown.DocumentLocks;
+import com.jacolp.agent.markdown.model.DocumentId;
 
 import com.jacolp.mapper.MdDocumentMapper;
 import com.jacolp.agent.markdown.MarkdownContextProvider;
@@ -25,6 +28,8 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @Service
 public class MdDocumentServiceImpl implements MdDocumentService {
+
+    private static final ReentrantLock UPLOAD_LOCK = new ReentrantLock();
 
     private static final long MAX_FILE_SIZE_BYTES = 0xFFFF_FFFFL;
 
@@ -83,20 +88,31 @@ public class MdDocumentServiceImpl implements MdDocumentService {
             String content = new String(file.getBytes(), StandardCharsets.UTF_8);
             MdDocumentDTO documentDTO = new MdDocumentDTO(fileName, content, fileSizeBytes);
             MdDocument document = toEntity(documentDTO);
-            mapper.upsert(document);
-            // 写入后重新查询，确保返回值包含数据库生成的 ID 和时间字段。
-            MdDocument saved = Optional.ofNullable(mapper.selectByFileName(fileName))
-                    .orElseThrow(() -> new IllegalStateException(
-                            "document was not saved: " + fileName));
-            if (this.contextProvider != null) {
-                this.contextProvider.refresh(saved);
+            // Serialize filename upserts, including the first insert, before choosing the document lock.
+            UPLOAD_LOCK.lock();
+            try {
+                MdDocument existing = mapper.selectByFileName(fileName);
+                return existing == null ? persistUpload(document) : DocumentLocks.withLock(
+                        new DocumentId(existing.getId()), () -> persistUpload(document));
             }
-            return MdDocumentVO.from(saved);
+            finally {
+                UPLOAD_LOCK.unlock();
+            }
         } catch (IOException exception) {
             // 文件读取失败属于请求输入无法处理，转换为客户端可识别的 400 响应。
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "unable to read uploaded file", exception);
         }
+    }
+
+    private MdDocumentVO persistUpload(MdDocument document) {
+        mapper.upsert(document);
+        MdDocument saved = Optional.ofNullable(mapper.selectByFileName(document.getFileName()))
+                .orElseThrow(() -> new IllegalStateException("document was not saved: " + document.getFileName()));
+        if (this.contextProvider != null) {
+            this.contextProvider.refresh(saved);
+        }
+        return MdDocumentVO.from(saved);
     }
 
     /**
@@ -146,7 +162,10 @@ public class MdDocumentServiceImpl implements MdDocumentService {
             throw badRequest("content is too large");
         }
 
-        // 先确认目标存在；这样即使数据库将“无变化更新”返回 0，也不会误报文档不存在。
+        return DocumentLocks.withLock(new DocumentId(id), () -> syncUnderLock(id, content, fileSizeBytes));
+    }
+
+    private MdDocumentSyncVO syncUnderLock(long id, String content, long fileSizeBytes) {
         MdDocument existing = this.mapper.selectById(id);
         if (existing == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "document not found: " + id);
@@ -175,13 +194,15 @@ public class MdDocumentServiceImpl implements MdDocumentService {
      */
     @Override
     public void deleteById(long id) {
-        // 受影响行数为 0 表示目标文档不存在，避免把删除请求误报为成功。
-        if (mapper.deleteById(id) == 0) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "document not found: " + id);
-        }
-        if (this.contextProvider != null) {
-            this.contextProvider.remove(id);
-        }
+        DocumentLocks.withLock(new DocumentId(id), () -> {
+            if (mapper.deleteById(id) == 0) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "document not found: " + id);
+            }
+            if (this.contextProvider != null) {
+                this.contextProvider.remove(id);
+            }
+            return null;
+        });
     }
 
     /**

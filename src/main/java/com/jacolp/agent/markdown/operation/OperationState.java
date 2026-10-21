@@ -11,6 +11,8 @@ import com.jacolp.agent.markdown.model.SectionNodeRef;
  */
 final class OperationState {
 
+    private final OperationDetails details;
+
     private final UUID opId;
 
     private final SectionNodeRef section;
@@ -25,6 +27,15 @@ final class OperationState {
      * 创建初始状态为 {@link OperationStatus#PENDING} 的内部操作。
      */
     OperationState(UUID opId, SectionNodeRef section, String originalText, String newText) {
+        this(new Operation(opId, section, originalText, newText, OperationStatus.PENDING));
+    }
+
+    OperationState(Operation operation) {
+        this.details = operation.details();
+        UUID opId = operation.getOpId();
+        SectionNodeRef section = operation.getSection();
+        String originalText = operation.getOriginalText();
+        String newText = operation.getNewText();
         this.opId = Objects.requireNonNull(opId, "opId cannot be null");
         this.section = Objects.requireNonNull(section, "section cannot be null");
         this.originalText = Objects.requireNonNull(originalText, "originalText cannot be null");
@@ -55,6 +66,6 @@ final class OperationState {
 
     Operation snapshot() {
         // 对外只返回不可变副本，隐藏内部 AtomicReference 和状态写入能力。
-        return new Operation(this.opId, this.section, this.originalText, this.newText, this.status());
+        return new Operation(this.opId, this.section, this.originalText, this.newText, this.status(), this.details);
     }
 }

@@ -2,6 +2,8 @@ package com.jacolp.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import java.util.UUID;
 
@@ -14,6 +16,8 @@ import com.jacolp.agent.markdown.model.DocumentId;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class MarkdownOperationControllerTest {
 
@@ -54,5 +58,27 @@ class MarkdownOperationControllerTest {
                 () -> controller.get(UUID.randomUUID()));
 
         assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+    }
+
+    @Test
+    void previewsInsertionsThroughHttpWithoutMutatingAndReportsDraftConflicts() throws Exception {
+        String source = "# Root\nold\n";
+        MarkdownManager markdown = new MarkdownManager(snapshot -> { throw new AssertionError("preview wrote"); }, DOCUMENT_ID, source);
+        OperationManager manager = new OperationManager(markdown);
+        var operation = manager.createInsert(DOCUMENT_ID, markdown.getEntity(DOCUMENT_ID).getRevision(),
+                1, "after", "old", " added");
+        var mvc = MockMvcBuilders.standaloneSetup(new MarkdownOperationController(manager)).build();
+        String endpoint = "/api/markdown-operations/" + operation.getOpId() + "/preview";
+        mvc.perform(post(endpoint).contentType(MediaType.APPLICATION_JSON).content("{\"content\":\"# Root\\nold\\n\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").value("# Root\nold added\n"))
+                .andExpect(jsonPath("$.baseRevision").value(operation.details().baseRevision()))
+                .andExpect(jsonPath("$.edits[0].type").value("insert"));
+        mvc.perform(post(endpoint).contentType(MediaType.APPLICATION_JSON).content("{\"content\":\"changed\"}"))
+                .andExpect(status().isConflict());
+        mvc.perform(post(endpoint).contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest());
+        assertEquals(source, markdown.restoreMarkdown(DOCUMENT_ID));
+        assertEquals(OperationStatus.PENDING, manager.get(operation.getOpId()).getStatus());
     }
 }

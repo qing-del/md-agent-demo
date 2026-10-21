@@ -10,6 +10,8 @@ import com.jacolp.agent.markdown.model.SectionNodeRef;
  */
 public final class Operation {
 
+    private final OperationDetails details;
+
     private final UUID opId;
 
     private final SectionNodeRef section;
@@ -35,6 +37,12 @@ public final class Operation {
             String originalText,
             String newText,
             OperationStatus status) {
+        this(opId, section, originalText, newText, status, null);
+    }
+
+    public Operation(UUID opId, SectionNodeRef section, String originalText, String newText,
+            OperationStatus status, OperationDetails details) {
+        this.details = details;
         this.opId = Objects.requireNonNull(opId, "opId cannot be null");
         this.section = Objects.requireNonNull(section, "section cannot be null");
         this.originalText = Objects.requireNonNull(originalText, "originalText cannot be null");
@@ -47,6 +55,10 @@ public final class Operation {
      *
      * @return 操作 UUID
      */
+    public OperationDetails details() {
+        return this.details;
+    }
+
     public UUID getOpId() {
         return this.opId;
     }

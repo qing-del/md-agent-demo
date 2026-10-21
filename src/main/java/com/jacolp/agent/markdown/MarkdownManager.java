@@ -10,6 +10,10 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
+import com.jacolp.agent.markdown.model.DocumentEdit;
+import com.jacolp.agent.markdown.model.DocumentEditPreview;
+import com.jacolp.agent.markdown.exception.MarkdownRevisionException;
 
 import com.jacolp.agent.markdown.exception.MarkdownContextNotFoundException;
 import com.jacolp.agent.markdown.exception.MarkdownCursorException;
@@ -41,7 +45,7 @@ public final class MarkdownManager {
 
     private final ConcurrentMap<DocumentId, MarkdownContext> contexts = new ConcurrentHashMap<>();
 
-    private final ConcurrentMap<DocumentId, ReentrantLock> replacementLocks = new ConcurrentHashMap<>();
+    private final ConcurrentMap<DocumentId, ReentrantLock> replacementLocks = DocumentLocks.locks();
 
     /**
      * 创建一个尚未注册 Markdown 上下文的管理器。
@@ -73,9 +77,11 @@ public final class MarkdownManager {
      */
     public MarkdownContext register(DocumentId documentId, String source) {
         // 先完整解析新 source，再一次性替换旧快照，避免上下文处于半解析状态。
-        MarkdownContext context = this.parser.parse(documentId, source);
-        this.contexts.put(documentId, context);
-        return context;
+        return withDocumentLock(documentId, () -> {
+            MarkdownContext context = this.parser.parse(documentId, source);
+            this.contexts.put(documentId, context);
+            return context;
+        });
     }
 
     /**
@@ -85,7 +91,7 @@ public final class MarkdownManager {
      */
     public void unregister(DocumentId documentId) {
         Objects.requireNonNull(documentId, "documentId cannot be null");
-        this.contexts.remove(documentId);
+        withDocumentLock(documentId, () -> this.contexts.remove(documentId));
     }
 
     /**
@@ -278,44 +284,53 @@ public final class MarkdownManager {
         }
 
         DocumentId documentId = section.getDocumentId();
-        // 同一 DocumentId 的替换串行执行，避免两个请求基于同一旧快照互相覆盖。
-        ReentrantLock lock = this.replacementLocks.computeIfAbsent(documentId, ignored -> new ReentrantLock());
+        return withDocumentLock(documentId, () -> applyEdits(documentId, getEntity(documentId).getRevision(),
+                List.of(DocumentEdit.replace(section.getNodeNumber(), originalText, newText))));
+    }
+
+    /** Shared by application write paths, proposal creation and confirmation in this JVM. */
+    public <T> T withDocumentLock(DocumentId id, Supplier<T> action) {
+        ReentrantLock lock = this.replacementLocks.computeIfAbsent(id, ignored -> new ReentrantLock());
         lock.lock();
         try {
-            MarkdownContext current = getEntity(documentId);
-            SectionNode node = requireNode(current, section.getNodeNumber());
-            String source = current.getSource();
-            // 只截取当前节点的直属正文，子节点正文不会被本次替换命中。
-            String directBody = source.substring(node.getBodyStart(), node.getDirectEnd());
-            int matchStart = uniqueMatchStart(directBody, originalText);
-            int absoluteMatchStart = node.getBodyStart() + matchStart;
-            int absoluteMatchEnd = absoluteMatchStart + originalText.length();
-            if (newText.isEmpty()) {
-                // 删除直属正文中的完整一行时同时移除行尾换行，避免留下无意义的空行。
-                absoluteMatchEnd = endOfDeletedLine(source, absoluteMatchStart, absoluteMatchEnd);
-            }
-            String updatedSource = source.substring(0, absoluteMatchStart)
-                    + newText
-                    + source.substring(absoluteMatchEnd);
-            // 替换后重新解析完整文档，使标题编号、source span 和 revision 全部同步更新。
-            MarkdownContext updated = this.parser.parse(documentId, updatedSource);
-
-            try {
-                // 先持久化新快照，成功后才对内存上下文发布，保证失败时旧快照仍可读。
-                this.store.save(updated);
-            }
-            catch (RuntimeException exception) {
-                // 持久化异常转换为领域异常；此时 contexts 仍保留旧版本。
-                throw new MarkdownPersistenceException(
-                        "Unable to persist Markdown replacement: " + documentId, exception);
-            }
-            this.contexts.put(documentId, updated);
-            return new ReplaceResult(updated);
+            return action.get();
         }
         finally {
-            // 无论成功还是失败都释放 DocumentId 锁，避免后续替换永久阻塞。
             lock.unlock();
         }
+    }
+
+    public void requireRevision(DocumentId id, String revision) {
+        if (revision == null || !revision.equals(getEntity(id).getRevision())) {
+            throw new MarkdownRevisionException();
+        }
+    }
+
+    /** Resolves a proposal without publishing its temporary candidate. */
+    public DocumentEditPreview previewEdits(DocumentId id, String revision, String source, List<DocumentEdit> edits) {
+        Objects.requireNonNull(source, "content must not be null");
+        MarkdownContext base = this.parser.parse(id, source);
+        MarkdownEdits.Plan plan = MarkdownEdits.plan(base, revision, edits);
+        MarkdownContext candidate = this.parser.parse(id, plan.content());
+        return new DocumentEditPreview(id.value(), base.getRevision(), candidate.getRevision(),
+                candidate.getSource(), plan.diffs());
+    }
+
+    /** Resolves the entire candidate before a single save; only successful saves are published. */
+    public ReplaceResult applyEdits(DocumentId id, String revision, List<DocumentEdit> edits) {
+        return withDocumentLock(id, () -> {
+            MarkdownContext base = getEntity(id);
+            MarkdownEdits.Plan plan = MarkdownEdits.plan(base, revision, edits);
+            MarkdownContext updated = this.parser.parse(id, plan.content());
+            try {
+                this.store.save(updated);
+            }
+            catch (RuntimeException ex) {
+                throw new MarkdownPersistenceException("Unable to persist document edits: " + id, ex);
+            }
+            this.contexts.put(id, updated);
+            return new ReplaceResult(updated);
+        });
     }
 
     private static SectionNode requireNode(MarkdownContext context, int nodeNumber) {
@@ -333,21 +348,7 @@ public final class MarkdownManager {
                 || !node.getChildren().isEmpty();
     }
 
-    private static int uniqueMatchStart(String directBody, String originalText) {
-        int firstMatch = directBody.indexOf(originalText);
-        if (firstMatch < 0) {
-            // 找不到精确文本时不执行任何修改。
-            throw new MarkdownReplacementException("originalText was not found in the direct body");
-        }
-        int secondMatch = directBody.indexOf(originalText, firstMatch + 1);
-        if (secondMatch >= 0) {
-            // 第二次命中表示替换目标不唯一，避免误改正文。
-            throw new MarkdownReplacementException("originalText matched more than once in the direct body");
-        }
-        return firstMatch;
-    }
-
-    private static int endOfDeletedLine(String source, int matchStart, int matchEnd) {
+    static int endOfDeletedLine(String source, int matchStart, int matchEnd) {
         int lineStart = matchStart;
         while (lineStart > 0
                 && source.charAt(lineStart - 1) != '\n'

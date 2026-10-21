@@ -57,7 +57,7 @@ class MdDocumentServiceImplTest {
         assertEquals("README.md", documentCaptor.getValue().getFileName());
         assertEquals(expected.getContent(), documentCaptor.getValue().getContent());
         assertEquals(bytes.length, documentCaptor.getValue().getFileSizeBytes());
-        verify(mapper).selectByFileName("README.md");
+        verify(mapper, org.mockito.Mockito.times(2)).selectByFileName("README.md");
     }
 
     @Test
@@ -69,7 +69,7 @@ class MdDocumentServiceImplTest {
         MdDocumentVO actual = new MdDocumentServiceImpl(mapper).upload(file);
 
         assertEquals("notes.md", actual.getFileName());
-        verify(mapper).selectByFileName("notes.md");
+        verify(mapper, org.mockito.Mockito.times(2)).selectByFileName("notes.md");
     }
 
     @Test

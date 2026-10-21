@@ -38,6 +38,10 @@ public class MarkdownContextProvider {
      */
     public DocumentId ensureLoaded(long documentId) {
         DocumentId id = new DocumentId(documentId);
+        return DocumentLocks.withLock(id, () -> loadUnderLock(documentId, id));
+    }
+
+    private DocumentId loadUnderLock(long documentId, DocumentId id) {
         try {
             this.markdownManager.getEntity(id);
             return id;

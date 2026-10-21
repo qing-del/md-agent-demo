@@ -1,6 +1,9 @@
 package com.jacolp.agent.markdown.model;
 
 import java.util.Objects;
+import java.util.List;
+import com.jacolp.agent.markdown.operation.OperationDetails;
+import com.jacolp.agent.markdown.model.EditDiff;
 
 import com.jacolp.agent.markdown.operation.Operation;
 import com.jacolp.agent.markdown.operation.OperationStatus;
@@ -9,6 +12,8 @@ import com.jacolp.agent.markdown.operation.OperationStatus;
  * 面向 Agent 和前端的 Markdown 替换提案摘要。
  */
 public final class SectionReplaceProposal {
+
+    private final OperationDetails details;
 
     private final String opId;
 
@@ -39,6 +44,12 @@ public final class SectionReplaceProposal {
             String originalText,
             String newText,
             OperationStatus status) {
+        this(opId, documentId, nodeNumber, originalText, newText, status, null);
+    }
+
+    private SectionReplaceProposal(String opId, long documentId, int nodeNumber, String originalText,
+            String newText, OperationStatus status, OperationDetails details) {
+        this.details = details;
         this.opId = Objects.requireNonNull(opId, "opId cannot be null");
         this.originalText = Objects.requireNonNull(originalText, "originalText cannot be null");
         this.newText = Objects.requireNonNull(newText, "newText cannot be null");
@@ -68,7 +79,19 @@ public final class SectionReplaceProposal {
                 section.getNodeNumber(),
                 operation.getOriginalText(),
                 operation.getNewText(),
-                operation.getStatus());
+                operation.getStatus(), operation.details());
+    }
+
+    public String getKind() {
+        return this.details == null ? "replace" : this.details.kind();
+    }
+
+    public String getBaseRevision() {
+        return this.details == null ? null : this.details.baseRevision();
+    }
+
+    public List<EditDiff> getEdits() {
+        return this.details == null ? List.of() : this.details.diffs();
     }
 
     public String getOpId() {
