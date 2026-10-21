@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.boot.test.context.SpringBootTest;
 
+@org.springframework.context.annotation.Import(com.jacolp.OfflineHttpTestConfiguration.class)
 @SpringBootTest(properties = "QWEN_API_KEY=test-key")
 class MdAgentApplicationTests {
 

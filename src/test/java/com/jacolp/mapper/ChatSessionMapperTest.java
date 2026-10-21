@@ -17,6 +17,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
+@org.springframework.context.annotation.Import(com.jacolp.OfflineHttpTestConfiguration.class)
 @SpringBootTest
 @TestPropertySource(properties = "QWEN_API_KEY=test-key")
 class ChatSessionMapperTest {

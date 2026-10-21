@@ -5,6 +5,7 @@ import java.util.Objects;
 import com.jacolp.agent.markdown.MarkdownContextProvider;
 import com.jacolp.agent.markdown.MarkdownManager;
 import com.jacolp.agent.markdown.model.DocumentId;
+import com.jacolp.agent.markdown.model.DocumentSearchPage;
 import com.jacolp.agent.markdown.model.SectionNodeRef;
 import com.jacolp.agent.markdown.model.SectionPage;
 import com.jacolp.agent.markdown.model.SectionReplaceProposal;
@@ -54,7 +55,7 @@ public class MarkdownAgentTools {
     public String getArticleOverview(
             @ToolParam(description = "数据库中的 Markdown 文档 ID") long documentId) {
         DocumentId id = this.contextProvider.ensureLoaded(documentId);
-        return this.markdownManager.getHeadingTree(id);
+        return this.markdownManager.getVersionedHeadingTree(id);
     }
 
     /**
@@ -71,7 +72,7 @@ public class MarkdownAgentTools {
             @ToolParam(description = "数据库中的 Markdown 文档 ID") long documentId,
             @ToolParam(description = "文章概览中返回的章节节点编号") int nodeNumber) {
         DocumentId id = this.contextProvider.ensureLoaded(documentId);
-        return this.markdownManager.getSectionPreview(id, nodeNumber);
+        return this.markdownManager.getVersionedSectionPreview(id, nodeNumber);
     }
 
     /**
@@ -91,6 +92,17 @@ public class MarkdownAgentTools {
             @ToolParam(required = false, description = "上一页返回的 nextCursor，首次读取时省略") String cursor) {
         DocumentId id = this.contextProvider.ensureLoaded(documentId);
         return this.markdownManager.getSectionAll(id, nodeNumber, cursor);
+    }
+
+    @Tool(name = "search_document_content",
+            description = "在 Markdown 原文中精确搜索（区分大小写）。可限定章节及其子章节；每页最多10项。返回 revision 和定位信息。context 可能截断，修改前须读取足够原文；nextCursor 非空可续读。")
+    public DocumentSearchPage searchDocumentContent(
+            @ToolParam(description = "Markdown 文档 ID") long documentId,
+            @ToolParam(description = "非空字面查询，最多256个Unicode码点") String query,
+            @ToolParam(required = false, description = "可选章节编号，省略则全文搜索") Integer nodeNumber,
+            @ToolParam(required = false, description = "上一页 nextCursor；参数或文档版本变化后需重新搜索") String cursor) {
+        DocumentId id = this.contextProvider.ensureLoaded(documentId);
+        return this.markdownManager.searchDocumentContent(id, query, nodeNumber, cursor);
     }
 
     /**

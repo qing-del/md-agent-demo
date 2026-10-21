@@ -45,21 +45,21 @@ class MarkdownAgentToolsTest {
     @Test
     void readsArticleOverviewAfterEnsuringTheDocumentIsLoaded() {
         when(this.contextProvider.ensureLoaded(7L)).thenReturn(DOCUMENT_ID);
-        when(this.markdownManager.getHeadingTree(DOCUMENT_ID)).thenReturn("1. # Root");
+        when(this.markdownManager.getVersionedHeadingTree(DOCUMENT_ID)).thenReturn("1. # Root");
 
         assertEquals("1. # Root", this.tools.getArticleOverview(7L));
 
-        verify(this.markdownManager).getHeadingTree(DOCUMENT_ID);
+        verify(this.markdownManager).getVersionedHeadingTree(DOCUMENT_ID);
     }
 
     @Test
     void readsSectionPreview() {
         when(this.contextProvider.ensureLoaded(7L)).thenReturn(DOCUMENT_ID);
-        when(this.markdownManager.getSectionPreview(DOCUMENT_ID, 2)).thenReturn("## Child\nbody");
+        when(this.markdownManager.getVersionedSectionPreview(DOCUMENT_ID, 2)).thenReturn("## Child\nbody");
 
         assertEquals("## Child\nbody", this.tools.getSectionPreview(7L, 2));
 
-        verify(this.markdownManager).getSectionPreview(DOCUMENT_ID, 2);
+        verify(this.markdownManager).getVersionedSectionPreview(DOCUMENT_ID, 2);
     }
 
     @Test

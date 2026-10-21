@@ -10,6 +10,8 @@ import java.util.Objects;
  */
 public final class SectionPage {
 
+    private final String revision;
+
     private final String content;
 
     private final boolean hasMore;
@@ -24,6 +26,11 @@ public final class SectionPage {
      * @param nextCursor 下一页 cursor；{@code null} 表示没有后续内容，非 {@code null} 表示可以继续读取
      */
     public SectionPage(String content, boolean hasMore, String nextCursor) {
+        this(content, hasMore, nextCursor, null);
+    }
+
+    public SectionPage(String content, boolean hasMore, String nextCursor, String revision) {
+        this.revision = revision;
         this.content = Objects.requireNonNull(content, "content cannot be null");
         if (!hasMore && nextCursor != null) {
             // 最后一页没有下一页位置，避免返回相互矛盾的分页元数据。
@@ -42,6 +49,10 @@ public final class SectionPage {
      *
      * @return 当前页内容
      */
+    public String getRevision() {
+        return this.revision;
+    }
+
     public String getContent() {
         return this.content;
     }

@@ -17,6 +17,7 @@ import com.jacolp.agent.markdown.exception.MarkdownPersistenceException;
 import com.jacolp.agent.markdown.exception.MarkdownReplacementException;
 import com.jacolp.agent.markdown.exception.SectionNotFoundException;
 import com.jacolp.agent.markdown.model.DocumentId;
+import com.jacolp.agent.markdown.model.DocumentSearchPage;
 import com.jacolp.agent.markdown.model.MarkdownContext;
 import com.jacolp.agent.markdown.model.ReplaceResult;
 import com.jacolp.agent.markdown.model.SectionNode;
@@ -111,7 +112,15 @@ public final class MarkdownManager {
      * @return 每行一个标题，缩进表示逻辑树深度
      */
     public String getHeadingTree(DocumentId documentId) {
+        return headingTree(getEntity(documentId));
+    }
+
+    public String getVersionedHeadingTree(DocumentId documentId) {
         MarkdownContext context = getEntity(documentId);
+        return "revision: " + context.getRevision() + "\n" + headingTree(context);
+    }
+
+    private static String headingTree(MarkdownContext context) {
         StringBuilder result = new StringBuilder();
         Set<Integer> rendered = new HashSet<>();
         // 从所有根节点开始递归，保持多个一级标题在原文中的顺序。
@@ -156,7 +165,19 @@ public final class MarkdownManager {
      * @return 带动态省略号的节点预览文本
      */
     public String getSectionPreview(DocumentId documentId, int nodeNumber) {
+        return sectionPreview(getEntity(documentId), nodeNumber);
+    }
+
+    public String getVersionedSectionPreview(DocumentId documentId, int nodeNumber) {
         MarkdownContext context = getEntity(documentId);
+        return "revision: " + context.getRevision() + "\n" + sectionPreview(context, nodeNumber);
+    }
+
+    public DocumentSearchPage searchDocumentContent(DocumentId documentId, String query, Integer nodeNumber, String cursor) {
+        return MarkdownSearch.search(getEntity(documentId), query, nodeNumber, cursor);
+    }
+
+    private static String sectionPreview(MarkdownContext context, int nodeNumber) {
         SectionNode node = requireNode(context, nodeNumber);
         String source = context.getSource();
         StringBuilder result = new StringBuilder();
@@ -226,7 +247,7 @@ public final class MarkdownManager {
         // 对外以 nextCursor 是否存在作为续读依据，hasMore 仅保持兼容且与其同步。
         boolean hasMore = nextCursor != null;
         String content = page.content() + (hasMore ? "..." : "");
-        return new SectionPage(content, hasMore, nextCursor);
+        return new SectionPage(content, hasMore, nextCursor, context.getRevision());
     }
 
     /**
